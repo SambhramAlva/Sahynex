@@ -6,8 +6,13 @@ import os
 import hashlib
 import hmac
 import secrets
+import base64
 import logging
 from datetime import datetime, timedelta, timezone
+
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
@@ -74,8 +79,18 @@ async def current_user_id(
 # ── Token encryption for storing GitHub PATs ─────────────────────────
 from cryptography.fernet import Fernet
 
-_FERNET_KEY = os.getenv("FERNET_KEY", Fernet.generate_key().decode())
-_fernet = Fernet(_FERNET_KEY.encode() if isinstance(_FERNET_KEY, str) else _FERNET_KEY)
+
+def _resolve_fernet_key() -> bytes:
+    configured = os.getenv("FERNET_KEY")
+    if configured:
+        return configured.encode() if isinstance(configured, str) else configured
+
+    # Stable fallback for local dev: derive a deterministic key from JWT secret.
+    digest = hashlib.sha256(SECRET_KEY.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+_fernet = Fernet(_resolve_fernet_key())
 
 def encrypt_token(plain: str) -> str:
     return _fernet.encrypt(plain.encode()).decode()

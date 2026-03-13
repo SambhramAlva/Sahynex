@@ -69,6 +69,15 @@ class RunOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
+class RunChangeFileOut(BaseModel):
+    filename: str
+    status: str
+    additions: int
+    deletions: int
+    changes: int
+    patch: Optional[str] = None
+
 class RunLogEntry(BaseModel):
     id: int
     run_id: str

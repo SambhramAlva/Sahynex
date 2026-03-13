@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n backend,frontend -c yellow,cyan \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:frontend": "set VITE_API_URL=http://localhost:8010&& vite",
-    "dev:backend": "cd backend && py -3 -m uvicorn main:app --host 127.0.0.1 --port 8010",
+    "dev:frontend": "set VITE_API_URL=http://localhost:8011&& vite",
+    "dev:backend": "cd backend && c:/python314/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8011",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

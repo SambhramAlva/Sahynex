@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AuthPage from "./components/auth/AuthPage";
 import RepoSetup from "./components/auth/RepoSetup";
 import Sidebar from "./components/layout/Sidebar";
@@ -13,6 +13,10 @@ import { createRepoWorkspace } from "./data/mockData";
 
 const SESSION_STORAGE_KEY = "gitagent.session";
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const WS_BASE_URL = (import.meta.env.VITE_WS_URL || API_BASE_URL)
+  .replace(/^http:/i, "ws:")
+  .replace(/^https:/i, "wss:")
+  .replace(/\/$/, "");
 
 function normalizeRepoId(repoUrl) {
   return repoUrl.trim().toLowerCase();
@@ -65,7 +69,7 @@ function loadStoredSession() {
   }
 
   try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
 
     if (!raw) {
       return null;
@@ -104,6 +108,13 @@ export default function App() {
   const [authToken, setAuthToken] = useState(storedSession?.authToken || null);
   const [connectedRepos, setConnectedRepos] = useState(storedSession?.connectedRepos || []);
   const [activeRepoId, setActiveRepoId] = useState(storedSession?.activeRepoId || null);
+  const reposRef = useRef(connectedRepos);
+  const activeRepoIdRef = useRef(activeRepoId);
+  const syncInFlightRef = useRef(false);
+  const wsSocketRef = useRef(null);
+  const wsReconnectTimerRef = useRef(null);
+  const wsPingTimerRef = useRef(null);
+  const wsSyncTimerRef = useRef(null);
 
   const activeRepo = connectedRepos.find((repo) => repo.id === activeRepoId) || null;
   const page = activeRepo?.currentPage || "dashboard";
@@ -138,8 +149,16 @@ export default function App() {
     }
 
     const session = { authStep, user, authToken, connectedRepos, activeRepoId };
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   }, [authStep, user, authToken, connectedRepos, activeRepoId]);
+
+  useEffect(() => {
+    reposRef.current = connectedRepos;
+  }, [connectedRepos]);
+
+  useEffect(() => {
+    activeRepoIdRef.current = activeRepoId;
+  }, [activeRepoId]);
 
   const apiRequest = async (path, options = {}) => {
     const { method = "GET", body, token = authToken } = options;
@@ -195,6 +214,7 @@ export default function App() {
         state: mappedState,
         labels: issue.labels || [],
         assignee: run ? "ai-agent" : null,
+        runId: run?.id || null,
         branch: run?.branch_name || null,
         progress: mappedState === "merged" || mappedState === "review" ? 100 : mappedState === "solving" ? 55 : 0,
         pr: run?.pr_number ? `#${run.pr_number}` : null,
@@ -223,18 +243,140 @@ export default function App() {
       pr: undefined,
     }));
 
+    const latestFailedRun = apiRuns.find((run) => run.status === "failed");
+
     return {
       ...(existingRepo || createRepoWorkspace(repoUrl, repoId)),
       id: repoId,
       repo: repoUrl,
       token: repoToken,
       issues,
+      runs: apiRuns,
       commits,
       inbox,
+      lastRunError: latestFailedRun?.review_summary || null,
       currentPage: existingRepo?.currentPage || "dashboard",
       selectedIssueId: previousSelected || issues[0]?.id || null,
     };
   };
+
+  const syncActiveRepoFromRefs = async () => {
+    if (syncInFlightRef.current) {
+      return;
+    }
+
+    const current = reposRef.current.find((repo) => repo.id === activeRepoIdRef.current);
+    if (!current) {
+      return;
+    }
+
+    syncInFlightRef.current = true;
+    try {
+      const updatedRepo = await loadRepoWorkspaceFromApi(current.repo, current.token, current.id, current);
+      setConnectedRepos((prev) => prev.map((repo) => (repo.id === current.id ? updatedRepo : repo)));
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  };
+
+  const refreshActiveRepoData = async () => {
+    await syncActiveRepoFromRefs();
+  };
+
+  useEffect(() => {
+    if (authStep !== "app" || !authToken) {
+      return;
+    }
+
+    if (!user?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const clearTimers = () => {
+      if (wsReconnectTimerRef.current) {
+        window.clearTimeout(wsReconnectTimerRef.current);
+        wsReconnectTimerRef.current = null;
+      }
+      if (wsPingTimerRef.current) {
+        window.clearInterval(wsPingTimerRef.current);
+        wsPingTimerRef.current = null;
+      }
+      if (wsSyncTimerRef.current) {
+        window.clearTimeout(wsSyncTimerRef.current);
+        wsSyncTimerRef.current = null;
+      }
+    };
+
+    const scheduleSync = () => {
+      if (wsSyncTimerRef.current) {
+        return;
+      }
+      wsSyncTimerRef.current = window.setTimeout(async () => {
+        wsSyncTimerRef.current = null;
+        if (cancelled) {
+          return;
+        }
+        try {
+          await syncActiveRepoFromRefs();
+        } catch {
+          // Ignore transient refresh failures on push events.
+        }
+      }, 300);
+    };
+
+    const connect = () => {
+      const socketUrl = `${WS_BASE_URL}/api/agent/ws/${user.id}?token=${encodeURIComponent(authToken)}`;
+      const socket = new WebSocket(socketUrl);
+      wsSocketRef.current = socket;
+
+      socket.onopen = () => {
+        clearTimers();
+        wsPingTimerRef.current = window.setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send("ping");
+          }
+        }, 25000);
+        scheduleSync();
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const watchEvents = new Set(["log", "status_change", "inbox_new", "merge_request"]);
+          if (watchEvents.has(payload?.event)) {
+            scheduleSync();
+          }
+        } catch {
+          // Ignore malformed events.
+        }
+      };
+
+      socket.onerror = () => {
+        socket.close();
+      };
+
+      socket.onclose = () => {
+        if (cancelled) {
+          return;
+        }
+        clearTimers();
+        wsReconnectTimerRef.current = window.setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      clearTimers();
+      if (wsSocketRef.current) {
+        wsSocketRef.current.close();
+        wsSocketRef.current = null;
+      }
+    };
+  }, [authStep, authToken, user?.id]);
 
   const handleAuth = async ({ mode, name, email, password }) => {
     const endpoint = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
@@ -333,6 +475,45 @@ export default function App() {
     }));
   };
 
+  const handleRunIssue = async (issueNumber) => {
+    updateActiveRepo((repo) => ({ ...repo, lastRunError: null }));
+    try {
+      await apiRequest("/api/agent/run", {
+        method: "POST",
+        body: { issue_number: issueNumber },
+      });
+      await refreshActiveRepoData();
+      setRepoPage("review");
+    } catch (error) {
+      updateActiveRepo((repo) => ({
+        ...repo,
+        lastRunError: error.message || "Failed to start agent run",
+      }));
+      throw error;
+    }
+  };
+
+  const handleMergeDecision = async (runId, approved) => {
+    updateActiveRepo((repo) => ({ ...repo, lastRunError: null }));
+    try {
+      await apiRequest(`/api/agent/runs/${runId}/merge`, {
+        method: "POST",
+        body: { approved },
+      });
+      await refreshActiveRepoData();
+    } catch (error) {
+      updateActiveRepo((repo) => ({
+        ...repo,
+        lastRunError: error.message || "Failed to submit merge decision",
+      }));
+      throw error;
+    }
+  };
+
+  const handleLoadRunChanges = async (runId) => {
+    return apiRequest(`/api/agent/runs/${runId}/changes`);
+  };
+
   const handleDisconnect = async () => {
     await apiRequest("/api/repos/disconnect", { method: "DELETE" });
 
@@ -371,8 +552,8 @@ export default function App() {
         {page === "dashboard" && <Dashboard issues={issues} commits={commits} inbox={inbox} setPage={setRepoPage} />}
         {page === "issues" && <IssuesPage issues={issues} setPage={setRepoPage} setSelectedIssue={setSelectedIssue} />}
         {page === "commits" && <CommitsPage commits={commits} />}
-        {page === "review" && <ReviewPage />}
-        {page === "resolver" && <ResolverPage issue={selectedIssue} issues={issues} />}
+        {page === "review" && <ReviewPage runs={activeRepo?.runs || []} onDecision={handleMergeDecision} onLoadRunChanges={handleLoadRunChanges} errorMessage={activeRepo?.lastRunError} />}
+        {page === "resolver" && <ResolverPage issue={selectedIssue} issues={issues} onRunIssue={handleRunIssue} errorMessage={activeRepo?.lastRunError} />}
         {page === "inbox" && (
           <InboxPage
             inbox={inbox}

@@ -1,6 +1,6 @@
 import { Cursor, IssueStateDot, Spinner, Tag } from "../ui/Primitives";
 
-export default function ResolverPage({ issue, issues = [] }) {
+export default function ResolverPage({ issue, issues = [], onRunIssue, errorMessage }) {
     const logs = [
         { t: "00:00", txt: "Fetching issue #42 from GitHub API...", type: "info" },
         { t: "00:03", txt: "Creating branch: fix/issue-42-ws-memleak", type: "success" },
@@ -50,6 +50,35 @@ export default function ResolverPage({ issue, issues = [] }) {
                         <div style={{ fontSize: 9, color: "var(--muted)" }}>COMPLETE</div>
                     </div>
                 </div>
+
+                <div style={{ marginTop: 14 }}>
+                    <button
+                        onClick={async () => {
+                            try {
+                                await onRunIssue?.(display.number);
+                            } catch {
+                                // Error is surfaced from parent state.
+                            }
+                        }}
+                        className="rounded border px-4 py-2"
+                        style={{
+                            background: "var(--accent)",
+                            color: "var(--bg)",
+                            borderColor: "var(--accent)",
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 11,
+                            cursor: "pointer",
+                        }}
+                    >
+                        RUN AGENT ON ISSUE #{display.number}
+                    </button>
+                </div>
+
+                {errorMessage && (
+                    <div className="mt-3 rounded border px-3 py-2" style={{ borderColor: "var(--accent3)", background: "rgba(255,95,95,.08)", color: "var(--accent3)", fontSize: 11 }}>
+                        Agent run error: {errorMessage}
+                    </div>
+                )}
             </div>
 
             <div className="animate-fadeUp delay-2 rounded-lg border" style={{ background: "var(--bg)", borderColor: "var(--border)" }}>

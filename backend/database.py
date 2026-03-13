@@ -18,7 +18,20 @@ def _empty_db():
     return {
         "users": [],
         "repos": [],
+        "agent_runs": [],
+        "run_logs": [],
+        "inbox_messages": [],
     }
+
+
+def _normalize_db(payload: dict):
+    baseline = _empty_db()
+    if not isinstance(payload, dict):
+        return baseline
+    for key, default_value in baseline.items():
+        if key not in payload or not isinstance(payload[key], list):
+            payload[key] = default_value
+    return payload
 
 
 class FileDB:
@@ -30,7 +43,7 @@ class FileDB:
             return _empty_db()
         try:
             with self.file_path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+                return _normalize_db(json.load(f))
         except Exception:
             return _empty_db()
 
@@ -68,10 +81,85 @@ class FileDB:
             repos.sort(key=lambda x: x.get("connected_at", ""), reverse=True)
             return repos[0] if repos else None
 
+    async def list_repos_by_full_name(self, repo_full_name: str):
+        async with _LOCK:
+            db = await self._read()
+            return [r for r in db["repos"] if r.get("repo_full_name", "").lower() == repo_full_name.lower()]
+
     async def delete_repo_for_user(self, user_id: str):
         async with _LOCK:
             db = await self._read()
             db["repos"] = [r for r in db["repos"] if r["user_id"] != user_id]
+            await self._write(db)
+
+    async def add_run(self, run: dict):
+        async with _LOCK:
+            db = await self._read()
+            db["agent_runs"].append(run)
+            await self._write(db)
+
+    async def list_runs_for_repo(self, repo_id: str):
+        async with _LOCK:
+            db = await self._read()
+            runs = [r for r in db["agent_runs"] if r["repo_id"] == repo_id]
+            runs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return runs
+
+    async def get_run(self, run_id: str):
+        async with _LOCK:
+            db = await self._read()
+            return next((r for r in db["agent_runs"] if r["id"] == run_id), None)
+
+    async def update_run(self, run_id: str, updates: dict):
+        async with _LOCK:
+            db = await self._read()
+            for idx, run in enumerate(db["agent_runs"]):
+                if run["id"] == run_id:
+                    db["agent_runs"][idx] = {**run, **updates}
+                    await self._write(db)
+                    return db["agent_runs"][idx]
+            return None
+
+    async def add_run_log(self, log: dict):
+        async with _LOCK:
+            db = await self._read()
+            db["run_logs"].append(log)
+            await self._write(db)
+
+    async def list_run_logs(self, run_id: str):
+        async with _LOCK:
+            db = await self._read()
+            logs = [l for l in db["run_logs"] if l["run_id"] == run_id]
+            logs.sort(key=lambda x: x.get("timestamp", ""))
+            return logs
+
+    async def add_inbox_message(self, msg: dict):
+        async with _LOCK:
+            db = await self._read()
+            db["inbox_messages"].append(msg)
+            await self._write(db)
+
+    async def list_inbox_for_user(self, user_id: str):
+        async with _LOCK:
+            db = await self._read()
+            msgs = [m for m in db["inbox_messages"] if m["user_id"] == user_id]
+            msgs.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return msgs
+
+    async def mark_inbox_read(self, user_id: str, msg_id: str):
+        async with _LOCK:
+            db = await self._read()
+            for idx, msg in enumerate(db["inbox_messages"]):
+                if msg["user_id"] == user_id and msg["id"] == msg_id:
+                    db["inbox_messages"][idx] = {**msg, "read": True}
+            await self._write(db)
+
+    async def mark_all_inbox_read(self, user_id: str):
+        async with _LOCK:
+            db = await self._read()
+            for idx, msg in enumerate(db["inbox_messages"]):
+                if msg["user_id"] == user_id:
+                    db["inbox_messages"][idx] = {**msg, "read": True}
             await self._write(db)
 
 
