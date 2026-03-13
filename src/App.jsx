@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AuthPage from "./components/auth/AuthPage";
 import RepoSetup from "./components/auth/RepoSetup";
 import Sidebar from "./components/layout/Sidebar";
@@ -9,48 +9,381 @@ import IssuesPage from "./components/pages/IssuesPage";
 import ProfilePage from "./components/pages/ProfilePage";
 import ResolverPage from "./components/pages/ResolverPage";
 import ReviewPage from "./components/pages/ReviewPage";
-import { MOCK_COMMITS, MOCK_INBOX, MOCK_ISSUES } from "./data/mockData";
+import { createRepoWorkspace } from "./data/mockData";
+
+const SESSION_STORAGE_KEY = "gitagent.session";
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+
+function normalizeRepoId(repoUrl) {
+  return repoUrl.trim().toLowerCase();
+}
+
+function formatRelative(isoValue) {
+  if (!isoValue) {
+    return "just now";
+  }
+
+  const parsedDate = new Date(isoValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "just now";
+  }
+
+  const minutes = Math.max(1, Math.floor((Date.now() - parsedDate.getTime()) / 60000));
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function mapRunStatus(runStatus, issueState) {
+  if (runStatus === "running" || runStatus === "queued") return "solving";
+  if (runStatus === "awaiting_approval" || runStatus === "review") return "review";
+  if (runStatus === "merged") return "merged";
+  if (issueState === "closed") return "closed";
+  return "open";
+}
+
+async function parseApiError(response) {
+  let message = `Request failed with ${response.status}`;
+
+  try {
+    const data = await response.json();
+    if (data?.detail) {
+      message = Array.isArray(data.detail) ? data.detail.map((item) => item.msg || item).join(", ") : data.detail;
+    }
+  } catch {
+    // Keep fallback message.
+  }
+
+  return new Error(message);
+}
+
+function loadStoredSession() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    const connectedRepos = Array.isArray(parsed.connectedRepos) ? parsed.connectedRepos : [];
+    const activeRepoId = connectedRepos.some((repo) => repo.id === parsed.activeRepoId)
+      ? parsed.activeRepoId
+      : connectedRepos[0]?.id || null;
+    const hasUser = Boolean(parsed.user);
+    const hasRepos = connectedRepos.length > 0;
+    const authStep = hasUser ? (hasRepos ? parsed.authStep || "app" : "repo") : "auth";
+
+    return {
+      authStep: hasUser ? (hasRepos && authStep === "auth" ? "app" : authStep) : "auth",
+      user: parsed.user || null,
+      authToken: parsed.authToken || null,
+      connectedRepos,
+      activeRepoId,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
-  const [authStep, setAuthStep] = useState("auth");
-  const [user, setUser] = useState(null);
-  const [page, setPage] = useState("dashboard");
-  const [issues] = useState(MOCK_ISSUES);
-  const [commits] = useState(MOCK_COMMITS);
-  const [inbox, setInbox] = useState(MOCK_INBOX);
-  const [selectedIssue, setSelectedIssue] = useState(null);
+  const storedSession = loadStoredSession();
+  const [authStep, setAuthStep] = useState(storedSession?.authStep || "auth");
+  const [user, setUser] = useState(storedSession?.user || null);
+  const [authToken, setAuthToken] = useState(storedSession?.authToken || null);
+  const [connectedRepos, setConnectedRepos] = useState(storedSession?.connectedRepos || []);
+  const [activeRepoId, setActiveRepoId] = useState(storedSession?.activeRepoId || null);
 
-  const handleAuth = (u) => {
-    setUser(u);
+  const activeRepo = connectedRepos.find((repo) => repo.id === activeRepoId) || null;
+  const page = activeRepo?.currentPage || "dashboard";
+  const issues = activeRepo?.issues || [];
+  const commits = activeRepo?.commits || [];
+  const inbox = activeRepo?.inbox || [];
+  const selectedIssue = issues.find((issue) => issue.id === activeRepo?.selectedIssueId) || issues[0] || null;
+  const activeUser = user
+    ? {
+      ...user,
+      repo: activeRepo?.repo,
+      token: activeRepo?.token,
+      repos: connectedRepos,
+      repoConfig: activeRepo?.config,
+      repoStats: {
+        issueCount: issues.length,
+        commitCount: commits.length,
+        unreadInboxCount: inbox.filter((message) => !message.read).length,
+      },
+    }
+    : null;
+  const profileUser = user
+    ? {
+      ...user,
+      repos: connectedRepos,
+    }
+    : null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const session = { authStep, user, authToken, connectedRepos, activeRepoId };
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  }, [authStep, user, authToken, connectedRepos, activeRepoId]);
+
+  const apiRequest = async (path, options = {}) => {
+    const { method = "GET", body, token = authToken } = options;
+    const headers = { ...(options.headers || {}) };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      throw await parseApiError(response);
+    }
+
+    if (response.status === 204) {
+      return null;
+    }
+
+    return response.json();
+  };
+
+  const loadRepoWorkspaceFromApi = async (repoUrl, repoToken, repoId, existingRepo = null) => {
+    const [issuesResult, runsResult, inboxResult] = await Promise.allSettled([
+      apiRequest("/api/issues?state=all"),
+      apiRequest("/api/agent/runs"),
+      apiRequest("/api/agent/inbox"),
+    ]);
+
+    const apiIssues = issuesResult.status === "fulfilled" ? issuesResult.value : [];
+    const apiRuns = runsResult.status === "fulfilled" ? runsResult.value : [];
+    const apiInbox = inboxResult.status === "fulfilled" ? inboxResult.value : [];
+
+    const runByIssue = new Map(apiRuns.map((run) => [run.issue_number, run]));
+    const runById = new Map(apiRuns.map((run) => [run.id, run]));
+    const previousSelected = existingRepo?.selectedIssueId;
+
+    const issues = apiIssues.map((issue) => {
+      const run = runByIssue.get(issue.number);
+      const mappedState = mapRunStatus(run?.status, issue.state);
+
+      return {
+        id: issue.number,
+        number: issue.number,
+        title: issue.title,
+        state: mappedState,
+        labels: issue.labels || [],
+        assignee: run ? "ai-agent" : null,
+        branch: run?.branch_name || null,
+        progress: mappedState === "merged" || mappedState === "review" ? 100 : mappedState === "solving" ? 55 : 0,
+        pr: run?.pr_number ? `#${run.pr_number}` : null,
+      };
+    });
+
+    const commits = apiRuns.map((run) => ({
+      id: run.id,
+      hash: run.id.slice(0, 7),
+      msg: run.review_summary || run.issue_title || `Issue #${run.issue_number}`,
+      branch: run.branch_name || "n/a",
+      time: formatRelative(run.updated_at || run.created_at),
+      author: "gitAgent[bot]",
+      issue: run.issue_number,
+    }));
+
+    const inbox = apiInbox.map((message) => ({
+      id: message.id,
+      type: message.type || "info",
+      title: message.title,
+      body: message.body || "",
+      time: formatRelative(message.created_at),
+      read: Boolean(message.read),
+      issue: message.run_id ? runById.get(message.run_id)?.issue_number : undefined,
+      runId: message.run_id,
+      pr: undefined,
+    }));
+
+    return {
+      ...(existingRepo || createRepoWorkspace(repoUrl, repoId)),
+      id: repoId,
+      repo: repoUrl,
+      token: repoToken,
+      issues,
+      commits,
+      inbox,
+      currentPage: existingRepo?.currentPage || "dashboard",
+      selectedIssueId: previousSelected || issues[0]?.id || null,
+    };
+  };
+
+  const handleAuth = async ({ mode, name, email, password }) => {
+    const endpoint = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+    const payload = mode === "signup" ? { name, email, password } : { email, password };
+    const authData = await apiRequest(endpoint, { method: "POST", body: payload, token: null });
+
+    setAuthToken(authData.access_token);
+    setUser(authData.user);
+    setConnectedRepos([]);
+    setActiveRepoId(null);
     setAuthStep("repo");
   };
 
-  const handleRepoSetup = (cfg) => {
-    setUser((prev) => ({ ...prev, ...cfg }));
+  const handleRepoSetup = async (cfg) => {
+    const normalizedRepo = cfg.repo.trim();
+    const repoId = normalizeRepoId(normalizedRepo);
+    const existingRepo = connectedRepos.find((repo) => repo.id === repoId) || null;
+
+    await apiRequest("/api/repos/connect", {
+      method: "POST",
+      body: { repo_url: normalizedRepo, github_token: cfg.token },
+    });
+
+    const nextRepo = await loadRepoWorkspaceFromApi(normalizedRepo, cfg.token, repoId, existingRepo);
+
+    setConnectedRepos((prev) => {
+      const existingIndex = prev.findIndex((repo) => repo.id === repoId);
+
+      if (existingIndex >= 0) {
+        return prev.map((repo) => (repo.id === repoId ? nextRepo : repo));
+      }
+
+      return [...prev, nextRepo];
+    });
+
+    setActiveRepoId(repoId);
     setAuthStep("app");
   };
 
-  const handleDisconnect = () => {
-    setUser((prev) => ({ ...prev, repo: undefined, token: undefined }));
+  const handleAddRepo = () => {
     setAuthStep("repo");
   };
 
+  const handleSwitchRepo = async (repoId) => {
+    const targetRepo = connectedRepos.find((repo) => repo.id === repoId);
+    if (!targetRepo) {
+      return;
+    }
+
+    if (targetRepo.token) {
+      await apiRequest("/api/repos/connect", {
+        method: "POST",
+        body: { repo_url: targetRepo.repo, github_token: targetRepo.token },
+      });
+
+      const refreshedRepo = await loadRepoWorkspaceFromApi(targetRepo.repo, targetRepo.token, targetRepo.id, targetRepo);
+      setConnectedRepos((prev) => prev.map((repo) => (repo.id === repoId ? refreshedRepo : repo)));
+    }
+
+    setActiveRepoId(repoId);
+  };
+
+  const updateActiveRepo = (updater) => {
+    setConnectedRepos((prev) => prev.map((repo) => (repo.id === activeRepoId ? updater(repo) : repo)));
+  };
+
+  const setRepoPage = (nextPage) => {
+    updateActiveRepo((repo) => ({
+      ...repo,
+      currentPage: nextPage,
+    }));
+  };
+
+  const setActiveInbox = async (updater) => {
+    const currentInbox = activeRepo?.inbox || [];
+    const nextInbox = typeof updater === "function" ? updater(currentInbox) : updater;
+    const changedToRead = nextInbox.filter((nextMsg) => {
+      const previous = currentInbox.find((msg) => msg.id === nextMsg.id);
+      return nextMsg.read && previous && !previous.read;
+    });
+
+    await Promise.allSettled(
+      changedToRead.map((message) => apiRequest(`/api/agent/inbox/${message.id}/read`, { method: "PATCH" }))
+    );
+
+    updateActiveRepo((repo) => ({
+      ...repo,
+      inbox: nextInbox,
+    }));
+  };
+
+  const setSelectedIssue = (issue) => {
+    updateActiveRepo((repo) => ({
+      ...repo,
+      selectedIssueId: issue?.id || null,
+    }));
+  };
+
+  const handleDisconnect = async () => {
+    await apiRequest("/api/repos/disconnect", { method: "DELETE" });
+
+    setConnectedRepos((prev) => {
+      const remainingRepos = prev.filter((repo) => repo.id !== activeRepoId);
+      setActiveRepoId(remainingRepos[0]?.id || null);
+
+      if (remainingRepos.length === 0) {
+        setAuthStep("repo");
+      }
+
+      return remainingRepos;
+    });
+
+    if (connectedRepos.length <= 1) {
+      setAuthStep("repo");
+    }
+  };
+
   if (authStep === "auth") return <AuthPage onAuth={handleAuth} />;
-  if (authStep === "repo") return <RepoSetup user={user} onSetup={handleRepoSetup} />;
+  if (authStep === "repo") return <RepoSetup user={activeUser || user} onSetup={handleRepoSetup} />;
 
   return (
     <div className="scanline-overlay min-h-screen md:flex">
-      <Sidebar page={page} setPage={setPage} user={user} inbox={inbox} />
-      <main className="min-h-screen flex-1 md:ml-[220px]">
-        {page === "dashboard" && <Dashboard issues={issues} commits={commits} inbox={inbox} setPage={setPage} />}
-        {page === "issues" && <IssuesPage issues={issues} setPage={setPage} setSelectedIssue={setSelectedIssue} />}
+      <Sidebar
+        page={page}
+        setPage={setRepoPage}
+        user={activeUser}
+        inbox={inbox}
+        onAddRepo={handleAddRepo}
+        repos={connectedRepos}
+        activeRepoId={activeRepoId}
+        onSwitchRepo={handleSwitchRepo}
+      />
+      <main key={activeRepoId || "no-repo"} className="min-h-screen flex-1 md:ml-[220px]">
+        {page === "dashboard" && <Dashboard issues={issues} commits={commits} inbox={inbox} setPage={setRepoPage} />}
+        {page === "issues" && <IssuesPage issues={issues} setPage={setRepoPage} setSelectedIssue={setSelectedIssue} />}
         {page === "commits" && <CommitsPage commits={commits} />}
         {page === "review" && <ReviewPage />}
-        {page === "resolver" && <ResolverPage issue={selectedIssue} />}
+        {page === "resolver" && <ResolverPage issue={selectedIssue} issues={issues} />}
         {page === "inbox" && (
-          <InboxPage inbox={inbox} setInbox={setInbox} setPage={setPage} setSelectedIssue={setSelectedIssue} issues={issues} />
+          <InboxPage
+            inbox={inbox}
+            setInbox={setActiveInbox}
+            setPage={setRepoPage}
+            setSelectedIssue={setSelectedIssue}
+            issues={issues}
+            repoName={activeRepo?.repo}
+          />
         )}
-        {page === "profile" && <ProfilePage user={user} onDisconnect={handleDisconnect} />}
+        {page === "profile" && <ProfilePage user={profileUser} onDisconnect={handleDisconnect} />}
       </main>
     </div>
   );

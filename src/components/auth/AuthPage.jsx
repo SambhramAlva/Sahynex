@@ -7,7 +7,7 @@ export default function AuthPage({ onAuth }) {
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
 
-    const submit = () => {
+    const submit = async () => {
         setErr("");
         if (!form.email || !form.password) {
             setErr("All fields required.");
@@ -18,10 +18,13 @@ export default function AuthPage({ onAuth }) {
             return;
         }
         setLoading(true);
-        setTimeout(() => {
+        try {
+            await onAuth({ mode, ...form });
+        } catch (error) {
+            setErr(error?.message || "Authentication failed.");
+        } finally {
             setLoading(false);
-            onAuth({ name: form.name || form.email.split("@")[0], email: form.email });
-        }, 1200);
+        }
     };
 
     return (

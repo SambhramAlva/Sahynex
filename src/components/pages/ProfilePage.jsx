@@ -1,11 +1,13 @@
 import { Cursor, Tag } from "../ui/Primitives";
 
 export default function ProfilePage({ user, onDisconnect }) {
+    const connectedRepos = user?.repos || [];
+
     return (
         <div className="p-4 md:p-8">
             <div className="animate-fadeUp mb-6">
                 <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Profile <Cursor /></div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>// account and repository configuration</div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>// account and workspace configuration</div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -39,11 +41,17 @@ export default function ProfilePage({ user, onDisconnect }) {
 
                 <div className="animate-fadeUp delay-2 rounded-lg border p-5" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", marginBottom: 16, color: "var(--muted)" }}>GITHUB CONNECTION</div>
-                    <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>REPOSITORY</div>
-                    <div style={{ fontSize: 12, color: "var(--accent2)", marginBottom: 10 }}>{user?.repo}</div>
-                    <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>ACCESS TOKEN</div>
-                    <div style={{ fontSize: 12, color: "var(--muted2)", marginBottom: 8 }}>
-                        {user?.token ? user.token.slice(0, 4) + "***************" : "-"}
+                    <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>CONNECTED REPOS</div>
+                    <div style={{ fontSize: 12, color: "var(--muted2)", marginBottom: 12 }}>{connectedRepos.length}</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                        {connectedRepos.map((repo) => (
+                            <div key={repo.id} className="rounded border px-3 py-2" style={{ borderColor: "var(--border)", background: "var(--bg3)" }}>
+                                <div style={{ fontSize: 11, color: "var(--accent2)", marginBottom: 4 }}>{repo.repo}</div>
+                                <div style={{ fontSize: 9, color: "var(--muted2)" }}>
+                                    {repo.token ? `${repo.token.slice(0, 4)}***************` : "token unavailable"}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
@@ -63,7 +71,23 @@ export default function ProfilePage({ user, onDisconnect }) {
                     ))}
                 </div>
 
-                <div className="animate-fadeUp delay-4 rounded-lg border p-5 lg:col-span-2" style={{ background: "var(--bg2)", borderColor: "rgba(255,107,107,.2)" }}>
+                <div className="animate-fadeUp delay-4 rounded-lg border p-5 lg:col-span-2" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", marginBottom: 16, color: "var(--muted)" }}>WORKSPACE SUMMARY</div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        {[
+                            ["CONNECTED REPOS", connectedRepos.length],
+                            ["ACCOUNT EMAIL", user?.email || "-"],
+                            ["SESSION", "ACTIVE"],
+                        ].map(([label, value]) => (
+                            <div key={label} className="rounded border p-4" style={{ borderColor: "var(--border)", background: "var(--bg3)" }}>
+                                <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".08em", marginBottom: 6 }}>{label}</div>
+                                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--accent)", fontFamily: "var(--font-display)" }}>{value}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="animate-fadeUp delay-5 rounded-lg border p-5 lg:col-span-2" style={{ background: "var(--bg2)", borderColor: "rgba(255,107,107,.2)" }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", marginBottom: 14, color: "var(--accent3)" }}>DANGER ZONE</div>
                     <button
                         onClick={onDisconnect}

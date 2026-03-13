@@ -1,7 +1,6 @@
 import { Cursor, IssueStateDot, Spinner, Tag } from "../ui/Primitives";
-import { MOCK_ISSUES } from "../../data/mockData";
 
-export default function ResolverPage({ issue }) {
+export default function ResolverPage({ issue, issues = [] }) {
     const logs = [
         { t: "00:00", txt: "Fetching issue #42 from GitHub API...", type: "info" },
         { t: "00:03", txt: "Creating branch: fix/issue-42-ws-memleak", type: "success" },
@@ -11,7 +10,22 @@ export default function ResolverPage({ issue }) {
         { t: "00:41", txt: "Complete. Awaiting human approval.", type: "complete" },
     ];
 
-    const display = issue || MOCK_ISSUES[0];
+    const display = issue || issues[0];
+
+    if (!display) {
+        return (
+            <div className="p-4 md:p-8">
+                <div className="animate-fadeUp mb-6">
+                    <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Issue Resolver <Cursor /></div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>// trace agent execution step-by-step</div>
+                </div>
+
+                <div className="animate-fadeUp delay-1 rounded-lg border p-5" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+                    <div style={{ fontSize: 12, color: "var(--muted2)" }}>No issue selected for this repository yet.</div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="p-4 md:p-8">

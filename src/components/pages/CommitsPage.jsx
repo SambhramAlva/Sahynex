@@ -10,7 +10,7 @@ export default function CommitsPage({ commits }) {
 
             <div className="animate-fadeUp delay-1 rounded-lg border" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
                 {commits.map((c, i) => (
-                    <div key={c.hash} className="animate-slideIn border-b px-5 py-4" style={{ borderColor: "var(--border)", animationDelay: `${i * 0.05}s` }}>
+                    <div key={c.id || `${c.hash}-${c.issue}-${i}`} className="animate-slideIn border-b px-5 py-4" style={{ borderColor: "var(--border)", animationDelay: `${i * 0.05}s` }}>
                         <div className="mb-2 flex items-start gap-2">
                             <code style={{ fontSize: 11, color: "var(--accent)", background: "var(--bg4)", padding: "2px 8px", borderRadius: 4 }}>{c.hash}</code>
                             <span style={{ fontSize: 12, flex: 1, lineHeight: 1.5 }}>{c.msg}</span>

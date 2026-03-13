@@ -1,15 +1,16 @@
 import { Cursor } from "../ui/Primitives";
 
-export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, issues }) {
+export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, issues, repoName }) {
     const markRead = (id) => setInbox((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
     const markAllRead = () => setInbox((prev) => prev.map((m) => ({ ...m, read: true })));
+    const shortRepoName = repoName?.split("/").slice(-2).join("/") || "No active repo";
 
     return (
         <div className="p-4 md:p-8">
             <div className="animate-fadeUp mb-6 flex items-start justify-between gap-3">
                 <div>
                     <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Inbox <Cursor /></div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>// messages from the AI agent</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>// messages from the AI agent for {shortRepoName}</div>
                 </div>
                 <button
                     onClick={markAllRead}
@@ -21,6 +22,9 @@ export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, 
             </div>
 
             <div className="animate-fadeUp delay-1 rounded-lg border" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+                <div className="border-b px-5 py-3" style={{ borderColor: "var(--border)", fontSize: 10, color: "var(--accent2)", letterSpacing: ".06em" }}>
+                    ACTIVE REPO: {shortRepoName}
+                </div>
                 {inbox.map((msg, i) => (
                     <div
                         key={msg.id}
@@ -52,20 +56,22 @@ export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, 
                                     {"REVIEW PR ->"}
                                 </button>
                             )}
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    const iss = issues.find((i2) => i2.number === msg.issue);
-                                    if (iss) {
-                                        setSelectedIssue(iss);
-                                        setPage("resolver");
-                                    }
-                                }}
-                                className="rounded border px-3 py-1.5"
-                                style={{ background: "transparent", color: "var(--muted)", borderColor: "var(--border)", fontFamily: "var(--font-mono)", fontSize: 10, cursor: "pointer" }}
-                            >
-                                view issue #{msg.issue}
-                            </button>
+                            {msg.issue && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const iss = issues.find((i2) => i2.number === msg.issue);
+                                        if (iss) {
+                                            setSelectedIssue(iss);
+                                            setPage("resolver");
+                                        }
+                                    }}
+                                    className="rounded border px-3 py-1.5"
+                                    style={{ background: "transparent", color: "var(--muted)", borderColor: "var(--border)", fontFamily: "var(--font-mono)", fontSize: 10, cursor: "pointer" }}
+                                >
+                                    view issue #{msg.issue}
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}

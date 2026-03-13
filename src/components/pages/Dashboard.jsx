@@ -1,11 +1,17 @@
 import { Cursor, IssueStateDot, Tag } from "../ui/Primitives";
 
 export default function Dashboard({ issues, commits, inbox, setPage }) {
+    const maxDashboardItems = 7;
     const open = issues.filter((i) => i.state === "open").length;
     const solving = issues.filter((i) => i.state === "solving").length;
     const review = issues.filter((i) => i.state === "review").length;
     const merged = issues.filter((i) => i.state === "merged").length;
-    const unread = inbox.filter((m) => !m.read).length;
+    const unreadMessages = inbox.filter((m) => !m.read);
+    const unread = unreadMessages.length;
+    const recentIssues = issues.slice(0, maxDashboardItems);
+    const recentCommits = commits.slice(0, maxDashboardItems);
+    const recentInbox = unreadMessages.slice(0, maxDashboardItems);
+    const listCardBodyStyle = { maxHeight: 420, overflowY: "auto" };
 
     return (
         <div className="p-4 md:p-8">
@@ -41,15 +47,17 @@ export default function Dashboard({ issues, commits, inbox, setPage }) {
                             {"view all ->"}
                         </button>
                     </div>
-                    {issues.slice(0, 4).map((issue) => (
-                        <div key={issue.id} className="flex items-center gap-3 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
-                            <IssueStateDot state={issue.state} />
-                            <div className="min-w-0 flex-1">
-                                <div className="truncate text-xs">#{issue.number} {issue.title}</div>
+                    <div style={listCardBodyStyle}>
+                        {recentIssues.map((issue) => (
+                            <div key={issue.id} className="flex items-center gap-3 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+                                <IssueStateDot state={issue.state} />
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-xs">#{issue.number} {issue.title}</div>
+                                </div>
+                                {issue.pr && <Tag color="blue">PR{issue.pr}</Tag>}
                             </div>
-                            {issue.pr && <Tag color="blue">PR{issue.pr}</Tag>}
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
 
                 <div className="animate-fadeUp delay-3 rounded-lg border" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
@@ -59,15 +67,17 @@ export default function Dashboard({ issues, commits, inbox, setPage }) {
                             {"view all ->"}
                         </button>
                     </div>
-                    {commits.slice(0, 4).map((c) => (
-                        <div key={c.hash} className="border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
-                            <div className="flex items-start gap-2">
-                                <code style={{ fontSize: 10, color: "var(--accent)", background: "var(--bg4)", padding: "1px 5px", borderRadius: 3 }}>{c.hash}</code>
-                                <div className="truncate text-xs">{c.msg}</div>
+                    <div style={listCardBodyStyle}>
+                        {recentCommits.map((c) => (
+                            <div key={c.hash} className="border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+                                <div className="flex items-start gap-2">
+                                    <code style={{ fontSize: 10, color: "var(--accent)", background: "var(--bg4)", padding: "1px 5px", borderRadius: 3 }}>{c.hash}</code>
+                                    <div className="truncate text-xs">{c.msg}</div>
+                                </div>
+                                <div className="truncate" style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>{c.time} · {c.branch}</div>
                             </div>
-                            <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>{c.time} · {c.branch}</div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
 
                 {unread > 0 && (
@@ -78,12 +88,26 @@ export default function Dashboard({ issues, commits, inbox, setPage }) {
                                 {"open inbox ->"}
                             </button>
                         </div>
-                        {inbox.filter((m) => !m.read).map((m) => (
-                            <div key={m.id} className="border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3 }}>{m.title}</div>
-                                <div style={{ fontSize: 10, color: "var(--muted)", lineHeight: 1.5 }}>{m.body}</div>
-                            </div>
-                        ))}
+                        <div style={listCardBodyStyle}>
+                            {recentInbox.map((m) => (
+                                <div key={m.id} className="border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+                                    <div className="truncate" style={{ fontSize: 11, fontWeight: 700, marginBottom: 3 }}>{m.title}</div>
+                                    <div
+                                        style={{
+                                            fontSize: 10,
+                                            color: "var(--muted)",
+                                            lineHeight: 1.5,
+                                            overflow: "hidden",
+                                            display: "-webkit-box",
+                                            WebkitLineClamp: 2,
+                                            WebkitBoxOrient: "vertical",
+                                        }}
+                                    >
+                                        {m.body}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>

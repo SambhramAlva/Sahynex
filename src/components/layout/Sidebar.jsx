@@ -1,6 +1,6 @@
 import { Badge } from "../ui/Primitives";
 
-export default function Sidebar({ page, setPage, user, inbox }) {
+export default function Sidebar({ page, setPage, user, inbox, onAddRepo, repos = [], activeRepoId, onSwitchRepo }) {
     const items = [
         { id: "dashboard", icon: "▦", label: "Dashboard" },
         { id: "issues", icon: "⊡", label: "Issues" },
@@ -28,27 +28,96 @@ export default function Sidebar({ page, setPage, user, inbox }) {
             </div>
 
             {user?.repo && (
-                <div
-                    style={{
-                        margin: "14px 14px 0",
-                        background: "var(--bg3)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                    }}
-                >
-                    <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".08em", marginBottom: 3 }}>ACTIVE REPO</div>
+                <div style={{ margin: "14px 14px 0" }}>
                     <div
                         style={{
-                            fontSize: 11,
-                            color: "var(--accent2)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            background: "var(--bg3)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            padding: "8px 10px",
                         }}
                     >
-                        {user.repo.split("/").slice(-2).join("/")}
+                        <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".08em", marginBottom: 3 }}>ACTIVE REPO</div>
+                        <div
+                            style={{
+                                fontSize: 11,
+                                color: "var(--accent2)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {user.repo.split("/").slice(-2).join("/")}
+                        </div>
                     </div>
+
+                    <button
+                        onClick={onAddRepo}
+                        style={{
+                            marginTop: 10,
+                            background: "var(--bg3)",
+                            border: "1px dashed var(--border2)",
+                            borderRadius: 6,
+                            padding: "10px",
+                            width: "100%",
+                            textAlign: "left",
+                            cursor: "pointer",
+                        }}
+                    >
+                        <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".08em" }}>ADD REPO</div>
+                    </button>
+
+                    {repos.length > 1 && (
+                        <div
+                            style={{
+                                marginTop: 10,
+                                background: "var(--bg3)",
+                                border: "1px solid var(--border)",
+                                borderRadius: 6,
+                                padding: "8px",
+                            }}
+                        >
+                            <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".08em", marginBottom: 6 }}>REPO WINDOWS</div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                                {repos.map((repo) => {
+                                    const isActive = repo.id === activeRepoId;
+
+                                    return (
+                                        <button
+                                            key={repo.id}
+                                            onClick={() => onSwitchRepo(repo.id)}
+                                            style={{
+                                                width: "100%",
+                                                padding: "8px",
+                                                borderRadius: 4,
+                                                border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
+                                                background: isActive ? "rgba(0,255,163,.08)" : "var(--bg4)",
+                                                color: isActive ? "var(--text)" : "var(--muted2)",
+                                                cursor: "pointer",
+                                                textAlign: "left",
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    fontSize: 10,
+                                                    fontFamily: "var(--font-mono)",
+                                                    letterSpacing: ".04em",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                }}
+                                            >
+                                                {repo.repo.split("/").slice(-2).join("/")}
+                                            </div>
+                                            <div style={{ fontSize: 9, color: isActive ? "var(--accent)" : "var(--muted)", marginTop: 3 }}>
+                                                {isActive ? "ACTIVE WINDOW" : "SWITCH TO WINDOW"}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

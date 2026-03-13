@@ -1,24 +1,33 @@
 import { useState } from "react";
 import { Input, Spinner, Tag } from "../ui/Primitives";
 
-export default function RepoSetup({ onSetup }) {
+export default function RepoSetup({ user, onSetup }) {
     const [form, setForm] = useState({ repo: "", token: "" });
     const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState("");
 
-    const submit = () => {
+    const submit = async () => {
         if (!form.repo || !form.token) return;
+        setErr("");
         setLoading(true);
-        setTimeout(() => {
+        try {
+            await onSetup(form);
+        } catch (error) {
+            setErr(error?.message || "Failed to connect repository.");
+        } finally {
             setLoading(false);
-            onSetup(form);
-        }, 1400);
+        }
     };
 
     return (
         <div className="flex min-h-screen items-center justify-center px-4">
             <div className="animate-fadeUp w-full max-w-[500px] rounded-xl border p-9" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Connect Repository</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 28 }}>// link your GitHub repo to get started</div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>
+                    {user?.repo ? "Add Repository" : "Connect Repository"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 28 }}>
+                    {user?.repo ? "// add another repo and keep the previous one available for switching" : "// link your GitHub repo to get started"}
+                </div>
 
                 <Input
                     label="GITHUB REPO URL"
@@ -37,6 +46,22 @@ export default function RepoSetup({ onSetup }) {
                 <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
                     Needs: <Tag>repo</Tag> <Tag>pull_request</Tag> <Tag>issues</Tag> scopes
                 </div>
+
+                {err && (
+                    <div
+                        style={{
+                            fontSize: 11,
+                            color: "var(--accent3)",
+                            marginBottom: 14,
+                            padding: "8px 10px",
+                            background: "rgba(255,107,107,.08)",
+                            border: "1px solid rgba(255,107,107,.2)",
+                            borderRadius: 4,
+                        }}
+                    >
+                        {err}
+                    </div>
+                )}
 
                 <button
                     onClick={submit}

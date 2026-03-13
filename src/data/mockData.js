@@ -140,3 +140,204 @@ export const MOCK_INBOX = [
         pr: 80,
     },
 ];
+
+const REPO_THEMES = [
+    {
+        issueTitles: [
+            "Fix webhook retry storm in delivery worker",
+            "Add audit trail for admin role changes",
+            "Refactor session refresh pipeline",
+            "Optimize search index warmup",
+            "Ship staged rollout toggle for billing UI",
+        ],
+        labels: [
+            ["bug", "critical"],
+            ["enhancement"],
+            ["refactor"],
+            ["maintenance"],
+            ["feature"],
+        ],
+        prefixes: ["fix", "feat", "refactor", "chore", "feat"],
+    },
+    {
+        issueTitles: [
+            "Patch race condition in job scheduler",
+            "Introduce request signing for outbound hooks",
+            "Split monolithic auth reducer",
+            "Upgrade background worker dependencies",
+            "Build saved filters for issue triage",
+        ],
+        labels: [
+            ["bug"],
+            ["enhancement", "security"],
+            ["refactor"],
+            ["maintenance"],
+            ["feature"],
+        ],
+        prefixes: ["fix", "feat", "refactor", "chore", "feat"],
+    },
+    {
+        issueTitles: [
+            "Resolve cache invalidation bug in repo sync",
+            "Add contributor insights export",
+            "Modularize notification ingestion service",
+            "Refresh CI image versions",
+            "Deliver keyboard shortcuts for review queue",
+        ],
+        labels: [
+            ["bug", "critical"],
+            ["enhancement"],
+            ["refactor"],
+            ["maintenance"],
+            ["feature"],
+        ],
+        prefixes: ["fix", "feat", "refactor", "chore", "feat"],
+    },
+];
+
+function hashString(value) {
+    let hash = 0;
+
+    for (let index = 0; index < value.length; index += 1) {
+        hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+
+    return hash;
+}
+
+function getRepoSlug(repoUrl) {
+    return repoUrl
+        .replace(/^https?:\/\/github\.com\//i, "")
+        .replace(/\.git$/i, "")
+        .replace(/^github\.com\//i, "")
+        .trim();
+}
+
+function buildBranchName(prefix, issueNumber, title) {
+    const slug = title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 24);
+
+    return `${prefix}/issue-${issueNumber}-${slug}`;
+}
+
+export function createRepoWorkspace(repoUrl, repoId) {
+    const slug = getRepoSlug(repoUrl) || repoId;
+    const hash = hashString(repoId);
+    const theme = REPO_THEMES[hash % REPO_THEMES.length];
+    const numberBase = 20 + (hash % 50);
+    const shortRepo = slug.split("/").pop() || "repo";
+    const repoTag = shortRepo.replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 4) || "repo";
+    const states = ["open", "open", "solving", "review", "merged"];
+    const progressValues = [55, 0, 35, 100, 100];
+    const prNumbers = [numberBase + 70, null, null, numberBase + 66, numberBase + 61];
+    const targetBranches = ["main", "develop", "release"];
+    const testRunners = ["npm test", "pnpm test", "vitest run"];
+
+    const issues = theme.issueTitles.map((title, index) => {
+        const number = numberBase + (theme.issueTitles.length - index) * 3;
+
+        return {
+            id: index + 1,
+            number,
+            title: `${title}`,
+            state: states[index],
+            labels: theme.labels[index],
+            assignee: states[index] === "open" && index === 1 ? null : "ai-agent",
+            branch: states[index] === "open" && index === 1 ? null : buildBranchName(theme.prefixes[index], number, title),
+            progress: progressValues[index],
+            pr: prNumbers[index] ? `#${prNumbers[index]}` : null,
+        };
+    });
+
+    const commits = [
+        {
+            id: `${repoId}-commit-1`,
+            hash: `${repoTag}${(hash % 9000) + 1000}`.slice(0, 7),
+            msg: `fix(${shortRepo}): stabilize ${issues[0].title.toLowerCase()}`,
+            branch: issues[0].branch,
+            time: "4 min ago",
+            author: "gitAgent[bot]",
+            issue: issues[0].number,
+        },
+        {
+            id: `${repoId}-commit-2`,
+            hash: `${repoTag}${(hash % 8000) + 2000}`.slice(0, 7),
+            msg: `feat(${shortRepo}): scaffold ${issues[1].title.toLowerCase()}`,
+            branch: buildBranchName("feat", issues[1].number, issues[1].title),
+            time: "18 min ago",
+            author: "gitAgent[bot]",
+            issue: issues[1].number,
+        },
+        {
+            id: `${repoId}-commit-3`,
+            hash: `${repoTag}${(hash % 7000) + 3000}`.slice(0, 7),
+            msg: `refactor(${shortRepo}): simplify ${issues[2].title.toLowerCase()}`,
+            branch: issues[2].branch,
+            time: "41 min ago",
+            author: "gitAgent[bot]",
+            issue: issues[2].number,
+        },
+        {
+            id: `${repoId}-commit-4`,
+            hash: `${repoTag}${(hash % 6000) + 4000}`.slice(0, 7),
+            msg: `chore(${shortRepo}): ship ${issues[3].title.toLowerCase()}`,
+            branch: issues[3].branch,
+            time: "1 hr ago",
+            author: "gitAgent[bot]",
+            issue: issues[3].number,
+        },
+    ];
+
+    const inbox = [
+        {
+            id: `${repoId}-message-1`,
+            type: "merge_request",
+            title: `${slug} PR ${issues[0].pr || "#pending"} ready for review`,
+            body: `The latest fix for issue #${issues[0].number} in ${slug} passed checks and is queued for human review.`,
+            time: "6 min ago",
+            read: false,
+            issue: issues[0].number,
+            pr: prNumbers[0],
+        },
+        {
+            id: `${repoId}-message-2`,
+            type: "review",
+            title: `${slug} dependency update reviewed`,
+            body: `Issue #${issues[3].number} finished validation. The maintenance branch is ready for merge.`,
+            time: "1 hr ago",
+            read: false,
+            issue: issues[3].number,
+            pr: prNumbers[3],
+        },
+        {
+            id: `${repoId}-message-3`,
+            type: "info",
+            title: `${slug} analysis started for issue #${issues[1].number}`,
+            body: `Agent started working on ${issues[1].title.toLowerCase()} for ${slug}.`,
+            time: "3 hr ago",
+            read: true,
+            issue: issues[1].number,
+        },
+    ];
+
+    return {
+        id: repoId,
+        repo: repoUrl,
+        token: "",
+        issues,
+        commits,
+        inbox,
+        config: {
+            branchPrefix: `${theme.prefixes[0]}/, ${theme.prefixes[1]}/, ${theme.prefixes[3]}/`,
+            targetBranch: targetBranches[hash % targetBranches.length],
+            autoAssignIssues: hash % 2 === 0 ? "Enabled" : "Manual",
+            prReviewRequired: hash % 3 === 0 ? "No" : "Yes",
+            testRunner: testRunners[hash % testRunners.length],
+        },
+        currentPage: "dashboard",
+        selectedIssueId: issues[0]?.id || null,
+    };
+}
