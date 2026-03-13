@@ -8,6 +8,8 @@ from typing import List
 import logging
 import importlib.util
 import json
+import threading
+import contextvars
 
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
@@ -32,12 +34,70 @@ logger = logging.getLogger(__name__)
 ADK_APP_NAME = "gitagent"
 
 
+_MODEL_REQUEST_RUN_ID = contextvars.ContextVar("model_request_run_id", default="global")
+_MODEL_REQUEST_REASON = contextvars.ContextVar("model_request_reason", default="unknown")
+_MODEL_REQUEST_STATS_LOCK = threading.Lock()
+_MODEL_REQUEST_STATS: dict[str, dict] = {}
+_HTTPX_MODEL_LOGGING_PATCHED = False
+_HTTPX_ASYNC_REQUEST_ORIGINAL = None
+_HTTPX_SYNC_REQUEST_ORIGINAL = None
+
+
 def _real_solver_available() -> tuple[bool, str | None]:
     if importlib.util.find_spec("google.adk") is None:
         return False, "google-adk is not installed in the backend Python environment"
     if not os.getenv("GOOGLE_API_KEY"):
         return False, "GOOGLE_API_KEY is not configured in backend/.env or the environment"
     return True, None
+
+
+def _is_model_api_request(url: str) -> bool:
+    low = url.lower()
+    if "googleapis.com" not in low:
+        return False
+    return any(hint in low for hint in ("generatecontent", "streamgeneratecontent", "counttokens", "/models/"))
+
+
+def _record_model_api_request(method: str, url: str):
+    run_id = _MODEL_REQUEST_RUN_ID.get()
+    reason = _MODEL_REQUEST_REASON.get()
+    with _MODEL_REQUEST_STATS_LOCK:
+        bucket = _MODEL_REQUEST_STATS.setdefault(run_id, {"count": 0, "reasons": {}})
+        bucket["count"] += 1
+        bucket["reasons"][reason] = bucket["reasons"].get(reason, 0) + 1
+        current_count = bucket["count"]
+    logger.info("MODEL_API_REQUEST run_id=%s count=%s method=%s url=%s reason=%s", run_id, current_count, method.upper(), url, reason)
+
+
+def _pop_model_api_request_stats(run_id: str) -> dict:
+    with _MODEL_REQUEST_STATS_LOCK:
+        stats = _MODEL_REQUEST_STATS.pop(run_id, None)
+    return stats or {"count": 0, "reasons": {}}
+
+
+def _patch_httpx_model_logging_once():
+    global _HTTPX_MODEL_LOGGING_PATCHED, _HTTPX_ASYNC_REQUEST_ORIGINAL, _HTTPX_SYNC_REQUEST_ORIGINAL
+    if _HTTPX_MODEL_LOGGING_PATCHED:
+        return
+
+    _HTTPX_ASYNC_REQUEST_ORIGINAL = httpx.AsyncClient.request
+    _HTTPX_SYNC_REQUEST_ORIGINAL = httpx.Client.request
+
+    async def _async_request_wrapped(self, method, url, *args, **kwargs):
+        url_text = str(url)
+        if _is_model_api_request(url_text):
+            _record_model_api_request(str(method), url_text)
+        return await _HTTPX_ASYNC_REQUEST_ORIGINAL(self, method, url, *args, **kwargs)
+
+    def _sync_request_wrapped(self, method, url, *args, **kwargs):
+        url_text = str(url)
+        if _is_model_api_request(url_text):
+            _record_model_api_request(str(method), url_text)
+        return _HTTPX_SYNC_REQUEST_ORIGINAL(self, method, url, *args, **kwargs)
+
+    httpx.AsyncClient.request = _async_request_wrapped
+    httpx.Client.request = _sync_request_wrapped
+    _HTTPX_MODEL_LOGGING_PATCHED = True
 
 
 # ── helpers ───────────────────────────────────────────────────────────
@@ -166,9 +226,10 @@ def _friendly_solver_error(exc: Exception) -> str:
 
 
 def _build_github_toolset(github_token: str) -> MCPToolset:
+    mcp_command = "npx.cmd" if os.name == "nt" else "npx"
     return MCPToolset(
         connection_params=StdioServerParameters(
-            command="npx",
+            command=mcp_command,
             args=["-y", "@modelcontextprotocol/server-github"],
             env={"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
         )
@@ -237,6 +298,9 @@ Return strict JSON with these keys only:
 
 
 async def _run_solver_pipeline(user_id: str, repo_full_name: str, issue_number: int, issue_title: str, github_token: str, run_id: str, db: FileDB):
+    _patch_httpx_model_logging_once()
+    run_id_token = _MODEL_REQUEST_RUN_ID.set(run_id)
+    reason_token = _MODEL_REQUEST_REASON.set(f"solve_issue_{issue_number}_workflow")
     session_service = InMemorySessionService()
     session = await session_service.create_session(
         app_name=ADK_APP_NAME,
@@ -255,34 +319,38 @@ async def _run_solver_pipeline(user_id: str, repo_full_name: str, issue_number: 
         f"Issue title: {issue_title}. Make real code changes, open a PR, and return structured JSON outputs."
     )
 
-    last_agent_text = ""
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session.id,
-        new_message=genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=prompt)]),
-    ):
-        if getattr(event, "error_message", None):
-            raise RuntimeError(event.error_message)
-        if getattr(event, "author", None) and event.author != "user":
-            text = _extract_text_from_content(getattr(event, "content", None))
-            if text and text != last_agent_text:
-                trimmed = text.strip()
-                if trimmed:
-                    await _append_log(db, run_id, "solver", "info", trimmed[:500], user_id)
-                last_agent_text = text
+    try:
+        last_agent_text = ""
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=prompt)]),
+        ):
+            if getattr(event, "error_message", None):
+                raise RuntimeError(event.error_message)
+            if getattr(event, "author", None) and event.author != "user":
+                text = _extract_text_from_content(getattr(event, "content", None))
+                if text and text != last_agent_text:
+                    trimmed = text.strip()
+                    if trimmed:
+                        await _append_log(db, run_id, "solver", "info", trimmed[:500], user_id)
+                    last_agent_text = text
 
-    final_session = await session_service.get_session(app_name=ADK_APP_NAME, user_id=user_id, session_id=session.id)
-    state = final_session.state if final_session else {}
-    coding = _safe_parse_json(state.get("coding_results"))
-    review = _safe_parse_json(state.get("review_results"))
+        final_session = await session_service.get_session(app_name=ADK_APP_NAME, user_id=user_id, session_id=session.id)
+        state = final_session.state if final_session else {}
+        coding = _safe_parse_json(state.get("coding_results"))
+        review = _safe_parse_json(state.get("review_results"))
 
-    # Some ADK runs may keep JSON in raw string form; try a second-pass parse.
-    if "raw" in coding and isinstance(coding.get("raw"), str):
-        coding = _safe_parse_json(coding.get("raw"))
-    if "raw" in review and isinstance(review.get("raw"), str):
-        review = _safe_parse_json(review.get("raw"))
+        # Some ADK runs may keep JSON in raw string form; try a second-pass parse.
+        if "raw" in coding and isinstance(coding.get("raw"), str):
+            coding = _safe_parse_json(coding.get("raw"))
+        if "raw" in review and isinstance(review.get("raw"), str):
+            review = _safe_parse_json(review.get("raw"))
 
-    return coding, review
+        return coding, review
+    finally:
+        _MODEL_REQUEST_REASON.reset(reason_token)
+        _MODEL_REQUEST_RUN_ID.reset(run_id_token)
 
 
 async def _execute_run(run_id: str, user_id: str, repo: dict, issue_number: int, issue_title: str, db: FileDB):
@@ -344,6 +412,16 @@ async def _execute_run(run_id: str, user_id: str, repo: dict, issue_number: int,
         await _set_run_status(db, user_id, run_id, "failed", review_summary=friendly)
         await _append_log(db, run_id, "error", "error", f"Run failed: {friendly}", user_id)
         await _append_inbox(db, user_id, run_id, "info", f"Run failed for issue #{issue_number}", friendly)
+    finally:
+        stats = _pop_model_api_request_stats(run_id)
+        reason_text = ", ".join(f"{k}={v}" for k, v in sorted(stats.get("reasons", {}).items())) or "none"
+        summary = (
+            f"Gemini API requests sent: {stats.get('count', 0)}. "
+            f"Reason breakdown: {reason_text}. "
+            f"Why: ADK executes iterative solve/review turns and may issue additional model calls for tool follow-ups."
+        )
+        logger.info("MODEL_API_SUMMARY run_id=%s %s", run_id, summary)
+        await _append_log(db, run_id, "telemetry", "info", summary, user_id)
 
 
 async def _validate_repo_push_access(repo: dict) -> str:
