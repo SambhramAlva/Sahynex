@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python/backend local files
+backend/.env
+backend/gitAgent.json
+backend/__pycache__/
+**/__pycache__/
+*.pyc
