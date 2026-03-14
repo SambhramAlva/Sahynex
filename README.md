@@ -12,7 +12,7 @@
 ## Overview
 
 Developers spend significant time converting GitHub issues into working code changes.
-Sahynex automates this workflow using an AI agent powered by Ollama.
+GitAgent automates this workflow using an AI agent powered by Ollama.
 
 The system reads issues, analyzes the repository, generates code changes, opens pull requests, and presents them to developers for approval.
 
@@ -113,7 +113,7 @@ Merge PR
 # Project Structure
 
 ```
-Sahynex/
+GitAgent/
 ├── src/                        # React frontend
 │   ├── App.jsx                 # Root app, session auth, routing
 │   ├── components/
@@ -159,8 +159,8 @@ Sahynex/
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/SambhramAlva/Sahynex.git
-cd Sahynex
+git clone https://github.com/SambhramAlva/GitAgent.git
+cd GitAgent
 npm install
 ```
 
@@ -268,7 +268,7 @@ Each step streams live logs to the frontend over **WebSockets**.
 
 1. Connect your GitHub repository.
 2. Create or select a GitHub issue.
-3. Trigger the Sahynex agent.
+3. Trigger the GitAgent agent.
 4. The agent:
 
    * creates a branch
