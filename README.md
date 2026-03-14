@@ -1,4 +1,4 @@
-# Sahynex — AI-Powered GitHub Issue Agent
+# GitAgent — AI-Powered GitHub Issue Agent
 
 > Automatically solves GitHub issues using Ollama, creates branches, writes code, opens pull requests, and waits for your approval before merging — all from a single dashboard.
 
