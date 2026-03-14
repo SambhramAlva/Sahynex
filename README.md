@@ -1,6 +1,6 @@
 # Sahynex — AI-Powered GitHub Issue Agent
 
-> Automatically solves GitHub issues using Google Gemini AI, creates branches, writes code, opens pull requests, and waits for your approval before merging — all from a single dashboard.
+> Automatically solves GitHub issues using Ollama, creates branches, writes code, opens pull requests, and waits for your approval before merging — all from a single dashboard.
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![React](https://img.shields.io/badge/React-19-blue)
@@ -12,7 +12,7 @@
 ## Overview
 
 Developers spend significant time converting GitHub issues into working code changes.
-Sahynex automates this workflow using an AI agent powered by **Google Gemini**.
+Sahynex automates this workflow using an AI agent powered by Ollama.
 
 The system reads issues, analyzes the repository, generates code changes, opens pull requests, and presents them to developers for approval.
 
