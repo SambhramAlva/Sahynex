@@ -12,7 +12,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Depends
 
 from database import get_db, FileDB
-from schemas import RepoConnectRequest, RepoOut
+from schemas import RepoConnectRequest, RepoOut, RepoTokenUpdateRequest
 from auth_utils import current_user_id, decrypt_token, encrypt_token
 
 router = APIRouter()
@@ -122,6 +122,42 @@ async def get_current_repo(
     return RepoOut(
         id=repo["id"], repo_url=repo["repo_url"], repo_full_name=repo["repo_full_name"],
         default_branch=repo["default_branch"], connected_at=repo["connected_at"],
+    )
+
+
+@router.patch("/token", status_code=204)
+async def update_github_token(
+    body: RepoTokenUpdateRequest,
+    uid: str = Depends(current_user_id),
+    db: FileDB = Depends(get_db),
+):
+    repo = await db.get_repo_for_user(uid)
+    if not repo:
+        raise HTTPException(status_code=404, detail="No repository connected")
+
+    github_token = body.github_token.strip()
+    if not github_token:
+        raise HTTPException(status_code=400, detail="GitHub token is required")
+
+    repo_data = await _verify_github_token(github_token, repo["repo_full_name"])
+    github_token_enc = encrypt_token(github_token)
+    owner_login = ((repo_data.get("owner") or {}).get("login") or "").strip() or None
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    await db.update_user(
+        uid,
+        {
+            "github_token_enc": github_token_enc,
+            "github_login": owner_login,
+            "updated_at": updated_at,
+        },
+    )
+    await db.update_repo(
+        repo["id"],
+        {
+            "github_token_enc": github_token_enc,
+            "updated_at": updated_at,
+        },
     )
 
 

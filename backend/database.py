@@ -96,6 +96,16 @@ class FileDB:
             repos.sort(key=lambda x: x.get("connected_at", ""), reverse=True)
             return repos[0] if repos else None
 
+    async def update_repo(self, repo_id: str, updates: dict):
+        async with _LOCK:
+            db = await self._read()
+            for idx, repo in enumerate(db["repos"]):
+                if repo["id"] == repo_id:
+                    db["repos"][idx] = {**repo, **updates}
+                    await self._write(db)
+                    return db["repos"][idx]
+            return None
+
     async def list_repos_by_full_name(self, repo_full_name: str):
         async with _LOCK:
             db = await self._read()

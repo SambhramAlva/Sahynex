@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { Cursor, Tag } from "../ui/Primitives";
 
-export default function ProfilePage({ user, onDisconnect, onLogout }) {
+export default function ProfilePage({ user, onDisconnect, onLogout, onUpdateGithubToken }) {
     const connectedRepos = user?.repos || [];
     const [pendingAction, setPendingAction] = useState("");
+    const [tokenDraft, setTokenDraft] = useState("");
+    const [showTokenEditor, setShowTokenEditor] = useState(false);
+    const [tokenMessage, setTokenMessage] = useState("");
+    const [tokenError, setTokenError] = useState("");
 
     return (
         <div className="p-4 md:p-8">
@@ -45,6 +49,103 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", marginBottom: 16, color: "var(--muted)" }}>GITHUB CONNECTION</div>
                     <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 4 }}>CONNECTED REPOS</div>
                     <div style={{ fontSize: 12, color: "var(--muted2)", marginBottom: 12 }}>{connectedRepos.length}</div>
+                    <div className="mb-4 rounded border px-3 py-3" style={{ borderColor: "var(--border)", background: "var(--bg3)" }}>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <div style={{ fontSize: 10, color: "var(--muted)", letterSpacing: ".08em", marginBottom: 4 }}>GITHUB TOKEN</div>
+                                <div style={{ fontSize: 11, color: "var(--muted2)" }}>
+                                    {connectedRepos[0]?.token ? `${connectedRepos[0].token.slice(0, 4)}***************` : "token unavailable"}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    if (pendingAction) {
+                                        return;
+                                    }
+                                    setShowTokenEditor((prev) => !prev);
+                                    setTokenDraft("");
+                                    setTokenError("");
+                                    setTokenMessage("");
+                                }}
+                                className="rounded border px-3 py-1.5"
+                                style={{
+                                    background: "transparent",
+                                    color: "var(--accent2)",
+                                    borderColor: "var(--accent2)",
+                                    fontFamily: "var(--font-mono)",
+                                    fontSize: 10,
+                                    cursor: pendingAction ? "wait" : "pointer",
+                                }}
+                            >
+                                {showTokenEditor ? "CANCEL" : "EDIT TOKEN"}
+                            </button>
+                        </div>
+                        {showTokenEditor && (
+                            <>
+                                <input
+                                    type="password"
+                                    value={tokenDraft}
+                                    onChange={(event) => setTokenDraft(event.target.value)}
+                                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                                    className="mb-3 w-full rounded-md border px-3 py-2 text-xs outline-none"
+                                    style={{
+                                        background: "var(--bg2)",
+                                        borderColor: "var(--border)",
+                                        color: "var(--text)",
+                                        fontFamily: "var(--font-mono)",
+                                    }}
+                                />
+                                {tokenError && (
+                                    <div className="mb-3 rounded border px-3 py-2" style={{ borderColor: "var(--accent3)", background: "rgba(255,95,95,.08)", color: "var(--accent3)", fontSize: 11 }}>
+                                        {tokenError}
+                                    </div>
+                                )}
+                                {tokenMessage && (
+                                    <div className="mb-3 rounded border px-3 py-2" style={{ borderColor: "var(--accent)", background: "rgba(0,229,160,.08)", color: "var(--accent)", fontSize: 11 }}>
+                                        {tokenMessage}
+                                    </div>
+                                )}
+                                <button
+                                    onClick={async () => {
+                                        if (pendingAction) {
+                                            return;
+                                        }
+                                        if (!tokenDraft.trim()) {
+                                            setTokenError("Enter a GitHub token.");
+                                            setTokenMessage("");
+                                            return;
+                                        }
+                                        setPendingAction("token");
+                                        setTokenError("");
+                                        setTokenMessage("");
+                                        try {
+                                            await onUpdateGithubToken?.(tokenDraft);
+                                            setTokenMessage("GitHub token updated.");
+                                            setTokenDraft("");
+                                            setShowTokenEditor(false);
+                                        } catch (error) {
+                                            setTokenError(error?.message || "Failed to update GitHub token.");
+                                        } finally {
+                                            setPendingAction("");
+                                        }
+                                    }}
+                                    disabled={Boolean(pendingAction)}
+                                    className="rounded border px-4 py-2"
+                                    style={{
+                                        background: "var(--accent)",
+                                        color: "var(--bg)",
+                                        borderColor: "var(--accent)",
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 10,
+                                        cursor: pendingAction ? "wait" : "pointer",
+                                        opacity: pendingAction && pendingAction !== "token" ? 0.7 : 1,
+                                    }}
+                                >
+                                    {pendingAction === "token" ? "UPDATING TOKEN..." : "SAVE TOKEN"}
+                                </button>
+                            </>
+                        )}
+                    </div>
                     <div style={{ display: "grid", gap: 8 }}>
                         {connectedRepos.map((repo) => (
                             <div key={repo.id} className="rounded border px-3 py-2" style={{ borderColor: "var(--border)", background: "var(--bg3)" }}>

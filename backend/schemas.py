@@ -33,6 +33,10 @@ class RepoConnectRequest(BaseModel):
     repo_url: str
     github_token: Optional[str] = None
 
+
+class RepoTokenUpdateRequest(BaseModel):
+    github_token: str
+
 class RepoOut(BaseModel):
     id: str
     repo_url: str

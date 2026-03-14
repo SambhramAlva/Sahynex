@@ -663,6 +663,22 @@ export default function App() {
     });
   };
 
+  const handleUpdateGithubToken = async (githubToken) => {
+    const normalizedToken = githubToken.trim();
+    if (!normalizedToken) {
+      throw new Error("GitHub token is required.");
+    }
+
+    await runWithGlobalLoading(async () => {
+      await apiRequest("/api/repos/token", {
+        method: "PATCH",
+        body: { github_token: normalizedToken },
+      });
+
+      setConnectedRepos((prev) => prev.map((repo) => ({ ...repo, token: normalizedToken })));
+    });
+  };
+
   if (authStep === "auth") return <AuthPage onAuth={handleAuth} />;
   if (authStep === "repo") return <RepoSetup user={activeUser || user} onSetup={handleRepoSetup} />;
 
@@ -739,7 +755,7 @@ export default function App() {
             repoName={activeRepo?.repo}
           />
         )}
-        {page === "profile" && <ProfilePage user={profileUser} onDisconnect={handleDisconnect} onLogout={handleLogout} />}
+        {page === "profile" && <ProfilePage user={profileUser} onDisconnect={handleDisconnect} onLogout={handleLogout} onUpdateGithubToken={handleUpdateGithubToken} />}
       </main>
     </div>
   );

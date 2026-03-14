@@ -5,6 +5,9 @@ export default function RepoSetup({ user, onSetup }) {
     const [form, setForm] = useState({ repo: "", token: "" });
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
+    const [showTokenField, setShowTokenField] = useState(false);
+    const hasStoredToken = Boolean(user?.token || user?.repos?.some((repo) => repo.token));
+    const requiresToken = !hasStoredToken || showTokenField;
 
     const submit = async () => {
         if (!form.repo) return;
@@ -36,13 +39,47 @@ export default function RepoSetup({ user, onSetup }) {
                     placeholder="https://github.com/user/repository"
                 />
 
-                <Input
-                    label="GITHUB PERSONAL ACCESS TOKEN"
-                    type="password"
-                    value={form.token}
-                    onChange={(v) => setForm((p) => ({ ...p, token: v }))}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                />
+                {hasStoredToken && !showTokenField && (
+                    <div
+                        style={{
+                            fontSize: 11,
+                            color: "var(--muted2)",
+                            marginBottom: 16,
+                            padding: "10px 12px",
+                            background: "var(--bg3)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                        }}
+                    >
+                        Using the GitHub token already saved in your profile.
+                        <button
+                            type="button"
+                            onClick={() => setShowTokenField(true)}
+                            style={{
+                                marginLeft: 8,
+                                background: "none",
+                                border: "none",
+                                color: "var(--accent2)",
+                                cursor: "pointer",
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 10,
+                                letterSpacing: ".06em",
+                            }}
+                        >
+                            USE DIFFERENT TOKEN
+                        </button>
+                    </div>
+                )}
+
+                {requiresToken && (
+                    <Input
+                        label={hasStoredToken ? "GITHUB PERSONAL ACCESS TOKEN (OPTIONAL OVERRIDE)" : "GITHUB PERSONAL ACCESS TOKEN"}
+                        type="password"
+                        value={form.token}
+                        onChange={(v) => setForm((p) => ({ ...p, token: v }))}
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    />
+                )}
 
                 <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 20, lineHeight: 1.6 }}>
                     Token scope needed: <strong>repo</strong>
@@ -66,14 +103,14 @@ export default function RepoSetup({ user, onSetup }) {
 
                 <button
                     onClick={submit}
-                    disabled={loading || !form.repo || !form.token}
+                    disabled={loading || !form.repo || (requiresToken && !form.token)}
                     className="flex w-full items-center justify-center gap-2 rounded-md border py-3 text-xs font-bold tracking-[.08em]"
                     style={{
-                        background: !form.repo || !form.token ? "var(--bg4)" : "var(--accent)",
-                        color: !form.repo || !form.token ? "var(--muted)" : "var(--bg)",
+                        background: !form.repo || (requiresToken && !form.token) ? "var(--bg4)" : "var(--accent)",
+                        color: !form.repo || (requiresToken && !form.token) ? "var(--muted)" : "var(--bg)",
                         borderColor: "var(--border2)",
                         fontFamily: "var(--font-mono)",
-                        cursor: !form.repo || !form.token ? "not-allowed" : "pointer",
+                        cursor: !form.repo || (requiresToken && !form.token) ? "not-allowed" : "pointer",
                     }}
                 >
                     {loading && <Spinner />}
