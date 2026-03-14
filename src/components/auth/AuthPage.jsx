@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Input, Spinner } from "../ui/Primitives";
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const RAW_API_BASE_URL = (import.meta.env.VITE_API_URL || "").trim();
+const API_BASE_URL = (
+    RAW_API_BASE_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "http://localhost:8000")
+).replace(/\/$/, "");
 
 export default function AuthPage({ onAuth }) {
     const [mode, setMode] = useState("login");
@@ -54,14 +58,14 @@ export default function AuthPage({ onAuth }) {
 
     return (
         <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-            <div className="animate-fadeUp z-10 w-full max-w-[440px] rounded-xl border p-9" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+            <div className="animate-fadeUp z-10 w-full max-w-[440px] rounded-xl border p-5 sm:p-7 md:p-9" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
                 <div style={{ display: "flex", gap: 6, marginBottom: 28 }}>
                     {["#ff5f57", "#febc2e", "#28c840"].map((c) => (
                         <div key={c} style={{ width: 11, height: 11, borderRadius: "50%", background: c }} />
                     ))}
                 </div>
 
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 800, marginBottom: 4 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px, 6vw, 28px)", fontWeight: 800, marginBottom: 4 }}>
                     <span style={{ color: "var(--accent)" }}>git</span>agent
                 </div>
                 <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 28, letterSpacing: ".06em" }}>

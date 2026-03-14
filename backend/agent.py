@@ -114,6 +114,36 @@ async def _github_request(method: str, url: str, token: str, **kwargs):
     return {}
 
 
+async def _close_issue_if_open(repo_full_name: str, issue_number: int, token: str, close_note: str | None = None):
+    issue_payload = await _github_request(
+        "GET",
+        f"https://api.github.com/repos/{repo_full_name}/issues/{issue_number}",
+        token,
+    )
+    if issue_payload.get("state") == "closed":
+        return False
+
+    if close_note:
+        try:
+            await _github_request(
+                "POST",
+                f"https://api.github.com/repos/{repo_full_name}/issues/{issue_number}/comments",
+                token,
+                json={"body": close_note},
+            )
+        except Exception:
+            # Commenting is optional; do not block the run if this fails.
+            pass
+
+    await _github_request(
+        "PATCH",
+        f"https://api.github.com/repos/{repo_full_name}/issues/{issue_number}",
+        token,
+        json={"state": "closed"},
+    )
+    return True
+
+
 def _extract_text_from_content(content) -> str:
     if not content:
         return ""
@@ -303,6 +333,20 @@ async def _execute_run(run_id: str, user_id: str, repo: dict, issue_number: int,
         tests_summary = coding_results.get("tests")
         if tests_summary:
             await _append_log(db, run_id, "tests", "info", tests_summary, user_id)
+
+        closed_on_github = False
+        try:
+            closed_on_github = await _close_issue_if_open(
+                repo_name,
+                issue_number,
+                token,
+                close_note=f"Automated fix prepared in PR #{pr_number}: {pr_url}",
+            )
+        except Exception as exc:
+            await _append_log(db, run_id, "review", "warn", f"Could not close GitHub issue automatically: {exc}", user_id)
+
+        if closed_on_github:
+            await _append_log(db, run_id, "review", "info", f"Closed GitHub issue #{issue_number} after creating PR #{pr_number}", user_id)
 
         await _set_run_status(
             db,
@@ -595,6 +639,18 @@ async def decide_merge(
         raise
 
     await _append_log(db, run_id, "merge", "success", f"Merged PR #{run['pr_number']} into main", uid)
+
+    try:
+        closed_on_merge = await _close_issue_if_open(
+            repo["repo_full_name"],
+            run["issue_number"],
+            token,
+            close_note=f"Resolved by merged PR #{run['pr_number']}: {run.get('pr_url') or ''}",
+        )
+        if closed_on_merge:
+            await _append_log(db, run_id, "merge", "info", f"Closed GitHub issue #{run['issue_number']} after merge", uid)
+    except Exception as exc:
+        await _append_log(db, run_id, "merge", "warn", f"Merged PR, but failed to close issue #{run['issue_number']}: {exc}", uid)
 
     try:
         await _github_request(

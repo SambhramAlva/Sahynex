@@ -1,8 +1,33 @@
+import { useState } from "react";
 import { Cursor } from "../ui/Primitives";
 
 export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, issues, repoName }) {
-    const markRead = (id) => setInbox((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
-    const markAllRead = () => setInbox((prev) => prev.map((m) => ({ ...m, read: true })));
+    const [busyMessageId, setBusyMessageId] = useState("");
+    const [markingAll, setMarkingAll] = useState(false);
+
+    const markRead = async (id) => {
+        if (markingAll || busyMessageId) {
+            return;
+        }
+        setBusyMessageId(id);
+        try {
+            await setInbox((prev) => prev.map((m) => (m.id === id ? { ...m, read: true } : m)));
+        } finally {
+            setBusyMessageId("");
+        }
+    };
+
+    const markAllRead = async () => {
+        if (markingAll || busyMessageId) {
+            return;
+        }
+        setMarkingAll(true);
+        try {
+            await setInbox((prev) => prev.map((m) => ({ ...m, read: true })));
+        } finally {
+            setMarkingAll(false);
+        }
+    };
     const shortRepoName = repoName?.split("/").slice(-2).join("/") || "No active repo";
 
     return (
@@ -14,10 +39,11 @@ export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, 
                 </div>
                 <button
                     onClick={markAllRead}
+                    disabled={markingAll || Boolean(busyMessageId)}
                     className="rounded border px-3 py-1.5"
-                    style={{ fontSize: 10, color: "var(--muted)", background: "var(--bg2)", borderColor: "var(--border)", fontFamily: "var(--font-mono)", cursor: "pointer" }}
+                    style={{ fontSize: 10, color: "var(--muted)", background: "var(--bg2)", borderColor: "var(--border)", fontFamily: "var(--font-mono)", cursor: markingAll || busyMessageId ? "wait" : "pointer", opacity: markingAll ? 0.75 : 1 }}
                 >
-                    mark all read
+                    {markingAll ? "marking..." : "mark all read"}
                 </button>
             </div>
 
@@ -28,7 +54,7 @@ export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, 
                 {inbox.map((msg, i) => (
                     <div
                         key={msg.id}
-                        className="animate-slideIn border-b px-5 py-4"
+                        className="animate-slideIn border-b px-4 py-4 md:px-5"
                         style={{
                             borderColor: "var(--border)",
                             background: !msg.read ? "rgba(0,229,160,.03)" : "transparent",
@@ -39,10 +65,10 @@ export default function InboxPage({ inbox, setInbox, setPage, setSelectedIssue, 
                         onClick={() => markRead(msg.id)}
                     >
                         <div className="mb-2 flex items-start justify-between gap-3">
-                            <span style={{ fontSize: 12, fontWeight: 700, color: !msg.read ? "var(--text)" : "var(--muted2)" }}>{msg.title}</span>
-                            <span style={{ fontSize: 9, color: "var(--muted)" }}>{msg.time}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: !msg.read ? "var(--text)" : "var(--muted2)", overflowWrap: "anywhere" }}>{msg.title}</span>
+                            <span className="shrink-0" style={{ fontSize: 9, color: "var(--muted)" }}>{msg.time}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6, marginBottom: 10 }}>{msg.body}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6, marginBottom: 10, overflowWrap: "anywhere" }}>{msg.body}</div>
                         <div className="flex flex-wrap gap-2">
                             {msg.type === "merge_request" && (
                                 <button

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cursor, Tag } from "../ui/Primitives";
+import { Cursor, Spinner, Tag } from "../ui/Primitives";
 
 function renderPatchLine(line, index) {
     let background = "transparent";
@@ -28,6 +28,7 @@ export default function ReviewPage({ runs = [], onDecision, onLoadRunChanges, er
     const [selectedId, setSelectedId] = useState(candidates[0]?.id || null);
     const [changedFiles, setChangedFiles] = useState([]);
     const [changesError, setChangesError] = useState("");
+    const [decisionLoading, setDecisionLoading] = useState("");
     const selected = candidates.find((run) => run.id === selectedId) || candidates[0] || null;
 
     useEffect(() => {
@@ -100,15 +101,15 @@ export default function ReviewPage({ runs = [], onDecision, onLoadRunChanges, er
 
                     <div className="animate-fadeUp delay-2 rounded-lg border" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
                         <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>PR #{selected.pr_number}: {selected.issue_title}</div>
-                            <div className="flex items-center gap-2">
-                                <code style={{ fontSize: 9, color: "var(--muted)" }}>{selected.branch_name}</code>
+                            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, overflowWrap: "anywhere" }}>PR #{selected.pr_number}: {selected.issue_title}</div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <code style={{ fontSize: 9, color: "var(--muted)", overflowWrap: "anywhere" }}>{selected.branch_name}</code>
                                 <span style={{ fontSize: 9, color: "var(--muted)" }}>to main</span>
                             </div>
                         </div>
                         <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
                             <div style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".1em", marginBottom: 8 }}>PR LINK</div>
-                            <a href={selected.pr_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--accent2)" }}>
+                            <a href={selected.pr_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--accent2)", overflowWrap: "anywhere" }}>
                                 {selected.pr_url}
                             </a>
                         </div>
@@ -130,8 +131,8 @@ export default function ReviewPage({ runs = [], onDecision, onLoadRunChanges, er
                             )}
                             {changedFiles.map((file) => (
                                 <div key={file.filename} className="mb-4 overflow-hidden rounded-md border" style={{ borderColor: "var(--border)", background: "var(--bg)" }}>
-                                    <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: "var(--border)", fontSize: 10 }}>
-                                        <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{file.filename}</span>
+                                    <div className="flex flex-wrap items-center justify-between gap-1 border-b px-3 py-2" style={{ borderColor: "var(--border)", fontSize: 10 }}>
+                                        <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>{file.filename}</span>
                                         <span style={{ color: "var(--muted)" }}>
                                             {file.status}  +{file.additions}  -{file.deletions}
                                         </span>
@@ -146,32 +147,48 @@ export default function ReviewPage({ runs = [], onDecision, onLoadRunChanges, er
                                     Agent error: {errorMessage}
                                 </div>
                             )}
-                            <div className="mt-4 flex gap-2">
+                            <div className="mt-4 flex flex-wrap gap-2">
                                 <button
                                     onClick={async () => {
+                                        if (decisionLoading) {
+                                            return;
+                                        }
+                                        setDecisionLoading("approve");
                                         try {
                                             await onDecision?.(selected.id, true);
                                         } catch {
                                             // Error is surfaced from parent state.
+                                        } finally {
+                                            setDecisionLoading("");
                                         }
                                     }}
+                                    disabled={Boolean(decisionLoading)}
                                     className="rounded px-3 py-2"
-                                    style={{ background: "var(--accent)", color: "var(--bg)", border: "none", fontFamily: "var(--font-mono)", fontSize: 10, cursor: "pointer" }}
+                                    style={{ background: "var(--accent)", color: "var(--bg)", border: "none", fontFamily: "var(--font-mono)", fontSize: 10, cursor: decisionLoading ? "wait" : "pointer", opacity: decisionLoading && decisionLoading !== "approve" ? 0.7 : 1, display: "inline-flex", alignItems: "center", gap: 6 }}
                                 >
-                                    APPROVE AND MERGE
+                                    {decisionLoading === "approve" && <Spinner />}
+                                    {decisionLoading === "approve" ? "MERGING..." : "APPROVE AND MERGE"}
                                 </button>
                                 <button
                                     onClick={async () => {
+                                        if (decisionLoading) {
+                                            return;
+                                        }
+                                        setDecisionLoading("reject");
                                         try {
                                             await onDecision?.(selected.id, false);
                                         } catch {
                                             // Error is surfaced from parent state.
+                                        } finally {
+                                            setDecisionLoading("");
                                         }
                                     }}
+                                    disabled={Boolean(decisionLoading)}
                                     className="rounded border px-3 py-2"
-                                    style={{ background: "transparent", color: "var(--accent3)", borderColor: "var(--accent3)", fontFamily: "var(--font-mono)", fontSize: 10, cursor: "pointer" }}
+                                    style={{ background: "transparent", color: "var(--accent3)", borderColor: "var(--accent3)", fontFamily: "var(--font-mono)", fontSize: 10, cursor: decisionLoading ? "wait" : "pointer", opacity: decisionLoading && decisionLoading !== "reject" ? 0.7 : 1, display: "inline-flex", alignItems: "center", gap: 6 }}
                                 >
-                                    REJECT
+                                    {decisionLoading === "reject" && <Spinner />}
+                                    {decisionLoading === "reject" ? "REJECTING..." : "REJECT"}
                                 </button>
                             </div>
                         </div>

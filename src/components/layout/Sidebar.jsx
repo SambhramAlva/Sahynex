@@ -1,6 +1,8 @@
-import { Badge } from "../ui/Primitives";
+import { useState } from "react";
+import { Badge, Spinner } from "../ui/Primitives";
 
 export default function Sidebar({ page, setPage, user, inbox, onAddRepo, repos = [], activeRepoId, onSwitchRepo }) {
+    const [switchingRepoId, setSwitchingRepoId] = useState(null);
     const items = [
         { id: "dashboard", icon: "▦", label: "Dashboard" },
         { id: "issues", icon: "⊡", label: "Issues" },
@@ -85,7 +87,18 @@ export default function Sidebar({ page, setPage, user, inbox, onAddRepo, repos =
                                     return (
                                         <button
                                             key={repo.id}
-                                            onClick={() => onSwitchRepo(repo.id)}
+                                            onClick={async () => {
+                                                if (switchingRepoId || isActive) {
+                                                    return;
+                                                }
+                                                setSwitchingRepoId(repo.id);
+                                                try {
+                                                    await onSwitchRepo(repo.id);
+                                                } finally {
+                                                    setSwitchingRepoId(null);
+                                                }
+                                            }}
+                                            disabled={Boolean(switchingRepoId)}
                                             style={{
                                                 width: "100%",
                                                 padding: "8px",
@@ -93,7 +106,8 @@ export default function Sidebar({ page, setPage, user, inbox, onAddRepo, repos =
                                                 border: isActive ? "1px solid var(--accent)" : "1px solid var(--border)",
                                                 background: isActive ? "rgba(0,255,163,.08)" : "var(--bg4)",
                                                 color: isActive ? "var(--text)" : "var(--muted2)",
-                                                cursor: "pointer",
+                                                cursor: switchingRepoId ? "wait" : "pointer",
+                                                opacity: switchingRepoId && !isActive ? 0.7 : 1,
                                                 textAlign: "left",
                                             }}
                                         >
@@ -109,8 +123,9 @@ export default function Sidebar({ page, setPage, user, inbox, onAddRepo, repos =
                                             >
                                                 {repo.repo.split("/").slice(-2).join("/")}
                                             </div>
-                                            <div style={{ fontSize: 9, color: isActive ? "var(--accent)" : "var(--muted)", marginTop: 3 }}>
-                                                {isActive ? "ACTIVE WINDOW" : "SWITCH TO WINDOW"}
+                                            <div style={{ fontSize: 9, color: isActive ? "var(--accent)" : "var(--muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 6 }}>
+                                                {switchingRepoId === repo.id && <Spinner />}
+                                                {isActive ? "ACTIVE WINDOW" : switchingRepoId === repo.id ? "SWITCHING..." : "SWITCH TO WINDOW"}
                                             </div>
                                         </button>
                                     );

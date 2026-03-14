@@ -124,3 +124,30 @@ body {
     pointer-events: none;
     z-index: 9999;
 }
+
+@keyframes loadingSlide {
+    0% {
+        transform: translateX(-120%);
+    }
+
+    100% {
+        transform: translateX(360%);
+    }
+}
+
+.global-loading-bar {
+    height: 3px;
+    background: rgba(0, 229, 160, 0.12);
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.global-loading-bar::before {
+    content: "";
+    display: block;
+    width: 28%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    box-shadow: 0 0 18px rgba(0, 229, 160, 0.55);
+    animation: loadingSlide 0.9s linear infinite;
+}

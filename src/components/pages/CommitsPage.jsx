@@ -10,15 +10,15 @@ export default function CommitsPage({ commits }) {
 
             <div className="animate-fadeUp delay-1 rounded-lg border" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
                 {commits.map((c, i) => (
-                    <div key={c.id || `${c.hash}-${c.issue}-${i}`} className="animate-slideIn border-b px-5 py-4" style={{ borderColor: "var(--border)", animationDelay: `${i * 0.05}s` }}>
+                    <div key={c.id || `${c.hash}-${c.issue}-${i}`} className="animate-slideIn border-b px-4 py-4 md:px-5" style={{ borderColor: "var(--border)", animationDelay: `${i * 0.05}s` }}>
                         <div className="mb-2 flex items-start gap-2">
-                            <code style={{ fontSize: 11, color: "var(--accent)", background: "var(--bg4)", padding: "2px 8px", borderRadius: 4 }}>{c.hash}</code>
-                            <span style={{ fontSize: 12, flex: 1, lineHeight: 1.5 }}>{c.msg}</span>
+                            <code style={{ fontSize: 11, color: "var(--accent)", background: "var(--bg4)", padding: "2px 8px", borderRadius: 4, flexShrink: 0 }}>{c.hash}</code>
+                            <span style={{ fontSize: 12, flex: 1, lineHeight: 1.5, overflowWrap: "anywhere" }}>{c.msg}</span>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2 md:gap-3">
                             <Tag color="muted">issue #{c.issue}</Tag>
-                            <code style={{ fontSize: 9, color: "var(--muted)" }}>{c.branch}</code>
-                            <span style={{ fontSize: 9, color: "var(--muted)", marginLeft: "auto" }}>{c.author} · {c.time}</span>
+                            <code style={{ fontSize: 9, color: "var(--muted)", overflowWrap: "anywhere" }}>{c.branch}</code>
+                            <span className="w-full md:ml-auto md:w-auto" style={{ fontSize: 9, color: "var(--muted)" }}>{c.author} · {c.time}</span>
                         </div>
                     </div>
                 ))}

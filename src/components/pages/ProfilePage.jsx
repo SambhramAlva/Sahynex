@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Cursor, Tag } from "../ui/Primitives";
 
 export default function ProfilePage({ user, onDisconnect, onLogout }) {
     const connectedRepos = user?.repos || [];
+    const [pendingAction, setPendingAction] = useState("");
 
     return (
         <div className="p-4 md:p-8">
@@ -12,7 +14,7 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="animate-fadeUp delay-1 rounded-lg border p-6 lg:col-span-2" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
                         <div
                             style={{
                                 width: 56,
@@ -33,7 +35,7 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
                         </div>
                         <div>
                             <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 700 }}>{user?.name}</div>
-                            <div style={{ fontSize: 11, color: "var(--muted)" }}>{user?.email}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>{user?.email}</div>
                         </div>
                         <Tag color="accent">ACTIVE</Tag>
                     </div>
@@ -46,7 +48,7 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
                     <div style={{ display: "grid", gap: 8 }}>
                         {connectedRepos.map((repo) => (
                             <div key={repo.id} className="rounded border px-3 py-2" style={{ borderColor: "var(--border)", background: "var(--bg3)" }}>
-                                <div style={{ fontSize: 11, color: "var(--accent2)", marginBottom: 4 }}>{repo.repo}</div>
+                                <div style={{ fontSize: 11, color: "var(--accent2)", marginBottom: 4, overflowWrap: "anywhere" }}>{repo.repo}</div>
                                 <div style={{ fontSize: 9, color: "var(--muted2)" }}>
                                     {repo.token ? `${repo.token.slice(0, 4)}***************` : "token unavailable"}
                                 </div>
@@ -64,7 +66,7 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
                         ["PR REVIEW REQUIRED", "Yes"],
                         ["TEST RUNNER", "npm test"],
                     ].map(([k, v]) => (
-                        <div key={k} className="mb-2 flex justify-between text-xs">
+                        <div key={k} className="mb-2 flex flex-wrap justify-between gap-1 text-xs">
                             <span style={{ fontSize: 9, color: "var(--muted)", letterSpacing: ".06em" }}>{k}</span>
                             <span style={{ color: "var(--muted2)" }}>{v}</span>
                         </div>
@@ -91,18 +93,40 @@ export default function ProfilePage({ user, onDisconnect, onLogout }) {
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", marginBottom: 14, color: "var(--accent3)" }}>DANGER ZONE</div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         <button
-                            onClick={onDisconnect}
+                            onClick={async () => {
+                                if (pendingAction) {
+                                    return;
+                                }
+                                setPendingAction("disconnect");
+                                try {
+                                    await onDisconnect?.();
+                                } finally {
+                                    setPendingAction("");
+                                }
+                            }}
+                            disabled={Boolean(pendingAction)}
                             className="rounded border px-4 py-2"
-                            style={{ background: "transparent", color: "var(--accent3)", borderColor: "var(--accent3)", fontFamily: "var(--font-mono)", fontSize: 11, cursor: "pointer" }}
+                            style={{ background: "transparent", color: "var(--accent3)", borderColor: "var(--accent3)", fontFamily: "var(--font-mono)", fontSize: 11, cursor: pendingAction ? "wait" : "pointer", opacity: pendingAction && pendingAction !== "disconnect" ? 0.7 : 1 }}
                         >
-                            DISCONNECT REPO
+                            {pendingAction === "disconnect" ? "DISCONNECTING..." : "DISCONNECT REPO"}
                         </button>
                         <button
-                            onClick={onLogout}
+                            onClick={async () => {
+                                if (pendingAction) {
+                                    return;
+                                }
+                                setPendingAction("logout");
+                                try {
+                                    await onLogout?.();
+                                } finally {
+                                    setPendingAction("");
+                                }
+                            }}
+                            disabled={Boolean(pendingAction)}
                             className="rounded border px-4 py-2"
-                            style={{ background: "transparent", color: "var(--accent4)", borderColor: "var(--accent4)", fontFamily: "var(--font-mono)", fontSize: 11, cursor: "pointer" }}
+                            style={{ background: "transparent", color: "var(--accent4)", borderColor: "var(--accent4)", fontFamily: "var(--font-mono)", fontSize: 11, cursor: pendingAction ? "wait" : "pointer", opacity: pendingAction && pendingAction !== "logout" ? 0.7 : 1 }}
                         >
-                            LOG OUT
+                            {pendingAction === "logout" ? "LOGGING OUT..." : "LOG OUT"}
                         </button>
                     </div>
                 </div>

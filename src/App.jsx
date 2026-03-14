@@ -12,7 +12,11 @@ import ReviewPage from "./components/pages/ReviewPage";
 import { createRepoWorkspace } from "./data/mockData";
 
 const SESSION_STORAGE_KEY = "gitagent.session";
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const RAW_API_BASE_URL = (import.meta.env.VITE_API_URL || "").trim();
+const API_BASE_URL = (
+  RAW_API_BASE_URL ||
+  (typeof window !== "undefined" ? window.location.origin : "http://localhost:8000")
+).replace(/\/$/, "");
 const WS_BASE_URL = (import.meta.env.VITE_WS_URL || API_BASE_URL)
   .replace(/^http:/i, "ws:")
   .replace(/^https:/i, "wss:")
@@ -110,6 +114,15 @@ function loadStoredSession() {
 
 export default function App() {
   const storedSession = loadStoredSession();
+  const navItems = [
+    { id: "dashboard", label: "Dashboard" },
+    { id: "issues", label: "Issues" },
+    { id: "commits", label: "Commits" },
+    { id: "review", label: "Review" },
+    { id: "resolver", label: "Resolver" },
+    { id: "inbox", label: "Inbox" },
+    { id: "profile", label: "Profile" },
+  ];
   const [authStep, setAuthStep] = useState(storedSession?.authStep || "auth");
   const [user, setUser] = useState(storedSession?.user || null);
   const [authToken, setAuthToken] = useState(storedSession?.authToken || null);
@@ -122,6 +135,8 @@ export default function App() {
   const wsReconnectTimerRef = useRef(null);
   const wsPingTimerRef = useRef(null);
   const wsSyncTimerRef = useRef(null);
+  const [globalPendingCount, setGlobalPendingCount] = useState(0);
+  const isGlobalLoading = globalPendingCount > 0;
 
   const activeRepo = connectedRepos.find((repo) => repo.id === activeRepoId) || null;
   const page = activeRepo?.currentPage || "dashboard";
@@ -219,7 +234,12 @@ export default function App() {
     const apiRuns = runsResult.status === "fulfilled" ? runsResult.value : [];
     const apiInbox = inboxResult.status === "fulfilled" ? inboxResult.value : [];
 
-    const runByIssue = new Map(apiRuns.map((run) => [run.issue_number, run]));
+    const runByIssue = new Map();
+    apiRuns.forEach((run) => {
+      if (!runByIssue.has(run.issue_number)) {
+        runByIssue.set(run.issue_number, run);
+      }
+    });
     const runById = new Map(apiRuns.map((run) => [run.id, run]));
     const previousSelected = existingRepo?.selectedIssueId;
 
@@ -266,6 +286,9 @@ export default function App() {
 
     const latestFailedRun = apiRuns.find((run) => run.status === "failed");
 
+    const activeIssues = issues.filter((issue) => issue.state !== "review" && issue.state !== "merged" && issue.state !== "closed");
+    const fallbackSelectedIssueId = activeIssues[0]?.id || issues[0]?.id || null;
+
     return {
       ...(existingRepo || createRepoWorkspace(repoUrl, repoId)),
       id: repoId,
@@ -277,7 +300,7 @@ export default function App() {
       inbox,
       lastRunError: latestFailedRun?.review_summary || null,
       currentPage: existingRepo?.currentPage || "dashboard",
-      selectedIssueId: previousSelected || issues[0]?.id || null,
+      selectedIssueId: previousSelected || fallbackSelectedIssueId,
     };
   };
 
@@ -302,6 +325,15 @@ export default function App() {
 
   const refreshActiveRepoData = async () => {
     await syncActiveRepoFromRefs();
+  };
+
+  const runWithGlobalLoading = async (work) => {
+    setGlobalPendingCount((prev) => prev + 1);
+    try {
+      return await work();
+    } finally {
+      setGlobalPendingCount((prev) => Math.max(0, prev - 1));
+    }
   };
 
   useEffect(() => {
@@ -467,30 +499,32 @@ export default function App() {
   };
 
   const handleRepoSetup = async (cfg) => {
-    const normalizedRepo = cfg.repo.trim();
-    const normalizedToken = cfg.token.trim();
-    const repoId = normalizeRepoId(normalizedRepo);
-    const existingRepo = connectedRepos.find((repo) => repo.id === repoId) || null;
+    await runWithGlobalLoading(async () => {
+      const normalizedRepo = cfg.repo.trim();
+      const normalizedToken = cfg.token.trim();
+      const repoId = normalizeRepoId(normalizedRepo);
+      const existingRepo = connectedRepos.find((repo) => repo.id === repoId) || null;
 
-    await apiRequest("/api/repos/connect", {
-      method: "POST",
-      body: { repo_url: normalizedRepo, github_token: normalizedToken },
+      await apiRequest("/api/repos/connect", {
+        method: "POST",
+        body: { repo_url: normalizedRepo, github_token: normalizedToken },
+      });
+
+      const nextRepo = await loadRepoWorkspaceFromApi(normalizedRepo, normalizedToken, repoId, existingRepo);
+
+      setConnectedRepos((prev) => {
+        const existingIndex = prev.findIndex((repo) => repo.id === repoId);
+
+        if (existingIndex >= 0) {
+          return prev.map((repo) => (repo.id === repoId ? nextRepo : repo));
+        }
+
+        return [...prev, nextRepo];
+      });
+
+      setActiveRepoId(repoId);
+      setAuthStep("app");
     });
-
-    const nextRepo = await loadRepoWorkspaceFromApi(normalizedRepo, normalizedToken, repoId, existingRepo);
-
-    setConnectedRepos((prev) => {
-      const existingIndex = prev.findIndex((repo) => repo.id === repoId);
-
-      if (existingIndex >= 0) {
-        return prev.map((repo) => (repo.id === repoId ? nextRepo : repo));
-      }
-
-      return [...prev, nextRepo];
-    });
-
-    setActiveRepoId(repoId);
-    setAuthStep("app");
   };
 
   const handleAddRepo = () => {
@@ -498,20 +532,22 @@ export default function App() {
   };
 
   const handleSwitchRepo = async (repoId) => {
-    const targetRepo = connectedRepos.find((repo) => repo.id === repoId);
-    if (!targetRepo) {
-      return;
-    }
+    await runWithGlobalLoading(async () => {
+      const targetRepo = connectedRepos.find((repo) => repo.id === repoId);
+      if (!targetRepo) {
+        return;
+      }
 
-    await apiRequest("/api/repos/connect", {
-      method: "POST",
-      body: { repo_url: targetRepo.repo },
+      await apiRequest("/api/repos/connect", {
+        method: "POST",
+        body: { repo_url: targetRepo.repo },
+      });
+
+      const refreshedRepo = await loadRepoWorkspaceFromApi(targetRepo.repo, null, targetRepo.id, targetRepo);
+      setConnectedRepos((prev) => prev.map((repo) => (repo.id === repoId ? refreshedRepo : repo)));
+
+      setActiveRepoId(repoId);
     });
-
-    const refreshedRepo = await loadRepoWorkspaceFromApi(targetRepo.repo, null, targetRepo.id, targetRepo);
-    setConnectedRepos((prev) => prev.map((repo) => (repo.id === repoId ? refreshedRepo : repo)));
-
-    setActiveRepoId(repoId);
   };
 
   const handleLogout = () => {
@@ -537,21 +573,23 @@ export default function App() {
   };
 
   const setActiveInbox = async (updater) => {
-    const currentInbox = activeRepo?.inbox || [];
-    const nextInbox = typeof updater === "function" ? updater(currentInbox) : updater;
-    const changedToRead = nextInbox.filter((nextMsg) => {
-      const previous = currentInbox.find((msg) => msg.id === nextMsg.id);
-      return nextMsg.read && previous && !previous.read;
+    await runWithGlobalLoading(async () => {
+      const currentInbox = activeRepo?.inbox || [];
+      const nextInbox = typeof updater === "function" ? updater(currentInbox) : updater;
+      const changedToRead = nextInbox.filter((nextMsg) => {
+        const previous = currentInbox.find((msg) => msg.id === nextMsg.id);
+        return nextMsg.read && previous && !previous.read;
+      });
+
+      await Promise.allSettled(
+        changedToRead.map((message) => apiRequest(`/api/agent/inbox/${message.id}/read`, { method: "PATCH" }))
+      );
+
+      updateActiveRepo((repo) => ({
+        ...repo,
+        inbox: nextInbox,
+      }));
     });
-
-    await Promise.allSettled(
-      changedToRead.map((message) => apiRequest(`/api/agent/inbox/${message.id}/read`, { method: "PATCH" }))
-    );
-
-    updateActiveRepo((repo) => ({
-      ...repo,
-      inbox: nextInbox,
-    }));
   };
 
   const setSelectedIssue = (issue) => {
@@ -564,12 +602,14 @@ export default function App() {
   const handleRunIssue = async (issueNumber) => {
     updateActiveRepo((repo) => ({ ...repo, lastRunError: null }));
     try {
-      await apiRequest("/api/agent/run", {
-        method: "POST",
-        body: { issue_number: issueNumber },
+      await runWithGlobalLoading(async () => {
+        await apiRequest("/api/agent/run", {
+          method: "POST",
+          body: { issue_number: issueNumber },
+        });
+        await refreshActiveRepoData();
+        setRepoPage("review");
       });
-      await refreshActiveRepoData();
-      setRepoPage("review");
     } catch (error) {
       updateActiveRepo((repo) => ({
         ...repo,
@@ -582,11 +622,13 @@ export default function App() {
   const handleMergeDecision = async (runId, approved) => {
     updateActiveRepo((repo) => ({ ...repo, lastRunError: null }));
     try {
-      await apiRequest(`/api/agent/runs/${runId}/merge`, {
-        method: "POST",
-        body: { approved },
+      await runWithGlobalLoading(async () => {
+        await apiRequest(`/api/agent/runs/${runId}/merge`, {
+          method: "POST",
+          body: { approved },
+        });
+        await refreshActiveRepoData();
       });
-      await refreshActiveRepoData();
     } catch (error) {
       updateActiveRepo((repo) => ({
         ...repo,
@@ -601,22 +643,24 @@ export default function App() {
   };
 
   const handleDisconnect = async () => {
-    await apiRequest("/api/repos/disconnect", { method: "DELETE" });
+    await runWithGlobalLoading(async () => {
+      await apiRequest("/api/repos/disconnect", { method: "DELETE" });
 
-    setConnectedRepos((prev) => {
-      const remainingRepos = prev.filter((repo) => repo.id !== activeRepoId);
-      setActiveRepoId(remainingRepos[0]?.id || null);
+      setConnectedRepos((prev) => {
+        const remainingRepos = prev.filter((repo) => repo.id !== activeRepoId);
+        setActiveRepoId(remainingRepos[0]?.id || null);
 
-      if (remainingRepos.length === 0) {
+        if (remainingRepos.length === 0) {
+          setAuthStep("repo");
+        }
+
+        return remainingRepos;
+      });
+
+      if (connectedRepos.length <= 1) {
         setAuthStep("repo");
       }
-
-      return remainingRepos;
     });
-
-    if (connectedRepos.length <= 1) {
-      setAuthStep("repo");
-    }
   };
 
   if (authStep === "auth") return <AuthPage onAuth={handleAuth} />;
@@ -624,6 +668,7 @@ export default function App() {
 
   return (
     <div className="scanline-overlay min-h-screen md:flex">
+      {isGlobalLoading && <div className="global-loading-bar fixed left-0 right-0 top-0 z-50 md:left-[220px]" />}
       <Sidebar
         page={page}
         setPage={setRepoPage}
@@ -635,8 +680,52 @@ export default function App() {
         onSwitchRepo={handleSwitchRepo}
       />
       <main key={activeRepoId || "no-repo"} className="min-h-screen flex-1 md:ml-[220px]">
+        <div className="sticky top-0 z-10 border-b px-3 py-3 md:hidden" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 18, fontWeight: 800 }}>
+              <span style={{ color: "var(--accent)" }}>git</span>
+              <span style={{ color: "var(--text)" }}>agent</span>
+              <span style={{ color: "var(--accent)", fontSize: 20 }}>.</span>
+            </div>
+            <button
+              onClick={handleAddRepo}
+              className="rounded border px-2.5 py-1.5"
+              style={{
+                fontSize: 10,
+                color: "var(--muted2)",
+                background: "var(--bg3)",
+                borderColor: "var(--border)",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              ADD REPO
+            </button>
+          </div>
+          <div className="mb-3 truncate" style={{ fontSize: 10, color: "var(--muted)" }}>
+            ACTIVE REPO: {activeRepo?.repo?.split("/").slice(-2).join("/") || "none"}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setRepoPage(item.id)}
+                className="shrink-0 rounded border px-3 py-1.5"
+                style={{
+                  fontSize: 10,
+                  letterSpacing: ".06em",
+                  background: page === item.id ? "var(--bg3)" : "transparent",
+                  borderColor: page === item.id ? "var(--accent)" : "var(--border)",
+                  color: page === item.id ? "var(--text)" : "var(--muted2)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {item.label.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
         {page === "dashboard" && <Dashboard issues={issues} commits={commits} inbox={inbox} setPage={setRepoPage} />}
-        {page === "issues" && <IssuesPage issues={issues} setPage={setRepoPage} setSelectedIssue={setSelectedIssue} />}
+        {page === "issues" && <IssuesPage issues={issues} setPage={setRepoPage} setSelectedIssue={setSelectedIssue} onRetry={handleRunIssue} />}
         {page === "commits" && <CommitsPage commits={commits} />}
         {page === "review" && <ReviewPage runs={activeRepo?.runs || []} onDecision={handleMergeDecision} onLoadRunChanges={handleLoadRunChanges} errorMessage={activeRepo?.lastRunError} />}
         {page === "resolver" && <ResolverPage issue={selectedIssue} issues={issues} onRunIssue={handleRunIssue} errorMessage={activeRepo?.lastRunError} />}

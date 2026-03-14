@@ -21,8 +21,8 @@ export default function RepoSetup({ user, onSetup }) {
 
     return (
         <div className="flex min-h-screen items-center justify-center px-4">
-            <div className="animate-fadeUp w-full max-w-[500px] rounded-xl border p-9" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: 22, fontWeight: 800, marginBottom: 4 }}>
+            <div className="animate-fadeUp w-full max-w-[500px] rounded-xl border p-5 sm:p-7 md:p-9" style={{ background: "var(--bg2)", borderColor: "var(--border)" }}>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: "clamp(20px, 5.5vw, 22px)", fontWeight: 800, marginBottom: 4 }}>
                     {user?.repo ? "Add Repository" : "Connect Repository"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 28 }}>

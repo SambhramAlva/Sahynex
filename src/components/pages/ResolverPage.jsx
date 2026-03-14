@@ -1,6 +1,8 @@
-import { Cursor, IssueStateDot, Tag } from "../ui/Primitives";
+import { useState } from "react";
+import { Cursor, IssueStateDot, Spinner, Tag } from "../ui/Primitives";
 
 export default function ResolverPage({ issue, issues = [], onRunIssue, errorMessage }) {
+    const [manualRunning, setManualRunning] = useState(false);
     const display = issue || issues[0];
     const isAutoProcessing = display?.state === "solving" || display?.state === "review";
     const statusBadgeLabel = display?.state === "review"
@@ -45,7 +47,7 @@ export default function ResolverPage({ issue, issues = [], onRunIssue, errorMess
                 <div className="flex items-start gap-3">
                     <IssueStateDot state={display.state} />
                     <div className="flex-1">
-                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>#{display.number} {display.title}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, overflowWrap: "anywhere" }}>#{display.number} {display.title}</div>
                         <div className="flex flex-wrap gap-2">
                             {display.labels.map((l) => (
                                 <Tag key={l} color={l === "bug" || l === "critical" ? "red" : "blue"}>{l}</Tag>
@@ -65,25 +67,35 @@ export default function ResolverPage({ issue, issues = [], onRunIssue, errorMess
                 <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <button
                         onClick={async () => {
+                            if (manualRunning) {
+                                return;
+                            }
+                            setManualRunning(true);
                             try {
                                 await onRunIssue?.(display.number);
                             } catch {
                                 // Error is surfaced from parent state.
+                            } finally {
+                                setManualRunning(false);
                             }
                         }}
                         className="rounded border px-4 py-2"
                         style={{
                             background: "transparent",
-                            color: isAutoProcessing ? "var(--muted)" : "var(--accent2)",
-                            borderColor: isAutoProcessing ? "var(--border)" : "var(--accent2)",
+                            color: isAutoProcessing || manualRunning ? "var(--muted)" : "var(--accent2)",
+                            borderColor: isAutoProcessing || manualRunning ? "var(--border)" : "var(--accent2)",
                             fontFamily: "var(--font-mono)",
                             fontSize: 11,
-                            cursor: isAutoProcessing ? "not-allowed" : "pointer",
-                            opacity: isAutoProcessing ? 0.7 : 1,
+                            cursor: isAutoProcessing || manualRunning ? "not-allowed" : "pointer",
+                            opacity: isAutoProcessing || manualRunning ? 0.7 : 1,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
                         }}
-                        disabled={isAutoProcessing}
+                        disabled={isAutoProcessing || manualRunning}
                     >
-                        MANUAL FALLBACK: RUN AGENT ON ISSUE #{display.number}
+                        {manualRunning && <Spinner />}
+                        {manualRunning ? "RUNNING..." : `MANUAL FALLBACK: RUN AGENT ON ISSUE #${display.number}`}
                     </button>
                     <span
                         className="rounded-full border px-3 py-1"
@@ -121,7 +133,7 @@ export default function ResolverPage({ issue, issues = [], onRunIssue, errorMess
                 <div className="flex items-center gap-2 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
                     <span style={{ fontSize: 10, color: "var(--muted)" }}>Issue Description</span>
                 </div>
-                <div className="px-5 py-4" style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.8, whiteSpace: "pre-wrap", color: "var(--muted2)" }}>
+                <div className="px-4 py-4 md:px-5" style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.8, whiteSpace: "pre-wrap", color: "var(--muted2)", overflowWrap: "anywhere" }}>
                     {display.body?.trim() || "No description is available for this issue."}
                 </div>
             </div>
